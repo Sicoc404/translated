@@ -2,7 +2,7 @@ fastapi==0.109.0
 uvicorn==0.25.0
 python-dotenv>=1.0.0
 pydantic==2.5.3
-livekit-agents[groq,deepgram,cartesia]>=1.1.0,<2.0.0
+livekit-agents[groq,deepgram,cartesia]
 livekit-plugins-deepgram==1.0.0
 livekit-plugins-groq==1.0.0
 livekit-plugins-cartesia==1.0.0
