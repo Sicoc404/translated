@@ -6,5 +6,5 @@ livekit-agents[groq,deepgram,cartesia]>=1.0.0
 livekit-plugins-deepgram==1.0.0
 livekit-plugins-groq==1.0.0
 livekit-plugins-cartesia==1.0.0
-livekit-server-sdk-python==1.2.0
+livekit-api>=1.0.0
 python-multipart==0.0.6 
