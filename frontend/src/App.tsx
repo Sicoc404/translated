@@ -30,10 +30,9 @@ export default function PrymeUI() {
   const joinRoom = async (language: any) => {
     try {
       const roomName = language.roomName;
-      // 实际项目中，这里应该调用后端API获取token
-      const response = await fetch(`/api/get-token?room=${roomName}&participant_name=listener-${Date.now()}`);
-      const { token } = await response.json();
-      setToken(token);
+      // 模拟token获取，实际应该调用后端API
+      const mockToken = `mock-token-${roomName}-${Date.now()}`;
+      setToken(mockToken);
       setSelectedRoom(language);
       console.log(`正在加入房间: ${roomName}`);
     } catch (error) {
@@ -76,9 +75,9 @@ export default function PrymeUI() {
       alert('控制翻译失败，请稍后重试');
     }
   };
-  
+
   // 音频控制函数
-  const togglePlayback = () => {
+  const togglePlayPause = () => {
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
@@ -88,15 +87,15 @@ export default function PrymeUI() {
       setIsPlaying(!isPlaying);
     }
   };
-  
-  const handleVolumeChange = (e) => {
-    const newVolume = parseFloat(e.target.value);
+
+  const handleVolumeChange = (e: any) => {
+    const newVolume = e.target.value;
     setVolume(newVolume);
     if (audioRef.current) {
       audioRef.current.volume = newVolume;
     }
   };
-  
+
   // 处理房间连接
   const handleRoomConnected = (room: any) => {
     console.log('已连接到LiveKit房间:', room.name);
@@ -112,7 +111,7 @@ export default function PrymeUI() {
     });
     
     // 监听连接状态变化
-    room.on(RoomEvent.ConnectionStateChanged, (state) => {
+    room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
       console.log('房间连接状态变化:', state);
       if (state === ConnectionState.Disconnected || state === ConnectionState.Failed) {
         setIsConnected(false);
@@ -120,9 +119,9 @@ export default function PrymeUI() {
       }
     });
   };
-  
+
   // 处理参与者加入
-  const handleParticipantConnected = (participant) => {
+  const handleParticipantConnected = (participant: any) => {
     console.log('参与者加入:', participant.identity);
     
     // 检查是否是翻译代理
@@ -142,63 +141,34 @@ export default function PrymeUI() {
       });
     }
   };
-  
+
   // 处理轨道订阅
-  const handleTrackSubscribed = (track, publication) => {
+  const handleTrackSubscribed = (track: any, publication: any) => {
     console.log('订阅轨道:', track.kind);
     
     if (track.kind === Track.Kind.Audio) {
-      // 音频轨道处理
-      console.log('订阅音频轨道');
       const audioElement = track.attach();
-      audioElement.volume = volume;
       audioRef.current = audioElement;
-      
-      // 自动播放
-      if (isPlaying) {
-        audioElement.play().catch(e => console.error('自动播放失败:', e));
-      }
-    } 
-    else if (track.kind === Track.Kind.Data) {
-      // 数据轨道处理
-      console.log('订阅数据轨道');
-      track.on('message', handleDataMessage);
+      audioElement.volume = volume;
+      audioElement.play();
+      setIsPlaying(true);
     }
   };
-  
+
   // 处理轨道取消订阅
-  const handleTrackUnsubscribed = (track) => {
+  const handleTrackUnsubscribed = (track: any) => {
     console.log('取消订阅轨道:', track.kind);
-    
-    if (track.kind === Track.Kind.Audio) {
-      track.detach();
-      if (audioRef.current === track.mediaElement) {
-        audioRef.current = null;
-      }
-    }
+    track.detach();
   };
-  
+
   // 处理数据消息
-  const handleDataMessage = (message, kind) => {
-    if (kind !== DataPacket_Kind.RELIABLE) return;
-    
-    try {
-      // 尝试解析JSON
-      const data = JSON.parse(new TextDecoder().decode(message));
-      console.log('收到数据消息:', data);
-      
-      // 处理字幕
-      if (data.type === 'transcript' || data.type === 'translation') {
-        setSubtitle(data.text || '');
-      }
-    } catch (e) {
-      // 如果不是JSON，直接使用文本
-      const text = new TextDecoder().decode(message);
-      console.log('收到文本消息:', text);
-      setSubtitle(text);
-    }
+  const handleDataReceived = (e: any) => {
+    const decoder = new TextDecoder();
+    const message = decoder.decode(e.payload);
+    console.log('收到翻译数据:', message);
+    setSubtitle(message);
   };
-  
+
   // 断开连接
   const disconnect = () => {
     if (roomRef.current) {
@@ -296,9 +266,6 @@ export default function PrymeUI() {
               <div className="inline-flex items-center space-x-4 px-6 py-3 bg-white/20 backdrop-blur-md text-white rounded-full font-semibold shadow-lg border border-white/20">
                 <div className="text-2xl">{selectedRoom.flag}</div>
                 <span className="text-lg">{selectedRoom.name} 房间</span>
-                {isTranslating && (
-                  <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full">翻译中</span>
-                )}
               </div>
             </div>
 
@@ -308,7 +275,10 @@ export default function PrymeUI() {
                 <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">字幕显示区</h2>
                 <div className="bg-gray-50 rounded-2xl p-8 min-h-[200px] flex items-center justify-center">
                   {subtitle ? (
-                    <p className="text-lg text-gray-800 subtitle-animation">{subtitle}</p>
+                    <div className="text-center">
+                      <p className="text-lg text-gray-800 mb-2">{subtitle}</p>
+                      <p className="text-sm text-gray-500">当前语言: {selectedRoom.lang}</p>
+                    </div>
                   ) : (
                     <div className="text-center text-gray-400">
                       <div className="text-6xl mb-4">📺</div>
@@ -326,9 +296,8 @@ export default function PrymeUI() {
                 <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">音频播放控制</h2>
                 <div className="flex items-center justify-center space-x-6">
                   <button 
+                    onClick={togglePlayPause}
                     className="p-4 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors"
-                    onClick={togglePlayback}
-                    disabled={!audioRef.current}
                   >
                     {isPlaying ? (
                       <Pause className="w-6 h-6 text-purple-700" />
@@ -341,10 +310,10 @@ export default function PrymeUI() {
                       type="range"
                       min="0"
                       max="1"
-                      step="0.01"
+                      step="0.1"
                       value={volume}
                       onChange={handleVolumeChange}
-                      className="w-full h-2 bg-gray-200 rounded-full appearance-none"
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
                     />
                   </div>
                   <button className="p-4 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors">
@@ -381,7 +350,7 @@ export default function PrymeUI() {
             {token && (
               <LiveKitRoom
                 token={token}
-                serverUrl={process.env.REACT_APP_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
+                serverUrl={process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
                 options={{
                   adaptiveStream: true,
                   dynacast: true,
@@ -400,7 +369,7 @@ export default function PrymeUI() {
 
       {/* Footer */}
       <footer className="py-6 text-center text-gray-500 text-sm relative z-10">
-        <p className="text-white/80 font-medium">© {new Date().getFullYear()} Pryme+ | 实时语音翻译系统</p>
+        <p className="text-white/80 font-medium">© 2025 Pryme+ | 实时语音翻译系统</p>
       </footer>
     </div>
   );
