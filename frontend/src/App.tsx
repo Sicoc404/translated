@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Volume2, Mic, Settings, ArrowLeft } from 'lucide-react';
-import { LiveKitRoom, useRoom, useParticipant, RoomEvent, RemoteParticipant, RemoteTrackPublication, Track } from '@livekit/components-react';
-import { Room, RoomOptions, RemoteTrack, DataPacket_Kind, ConnectionState } from 'livekit-client';
+import { LiveKitRoom } from '@livekit/components-react';
+import { Room, RoomOptions, RemoteTrack, DataPacket_Kind, ConnectionState, RoomEvent, RemoteParticipant, RemoteTrackPublication, Track } from 'livekit-client';
 
 export default function PrymeUI() {
   // 状态变量
@@ -12,11 +12,11 @@ export default function PrymeUI() {
   const [subtitle, setSubtitle] = useState('');
   const [volume, setVolume] = useState(0.8); // 音量控制，范围0-1
   const [isPlaying, setIsPlaying] = useState(true); // 音频播放状态
-  const [agentParticipant, setAgentParticipant] = useState(null);
+  const [agentParticipant, setAgentParticipant] = useState<any>(null);
   
   // 引用
-  const roomRef = useRef(null);
-  const audioRef = useRef(null);
+  const roomRef = useRef<any>(null);
+  const audioRef = useRef<any>(null);
   
   // 语言房间配置
   const languages = [
@@ -27,7 +27,7 @@ export default function PrymeUI() {
   ];
 
   // 获取房间token的函数
-  const joinRoom = async (language) => {
+  const joinRoom = async (language: any) => {
     try {
       const roomName = language.roomName;
       // 实际项目中，这里应该调用后端API获取token
@@ -98,7 +98,7 @@ export default function PrymeUI() {
   };
   
   // 处理房间连接
-  const handleRoomConnected = (room) => {
+  const handleRoomConnected = (room: any) => {
     console.log('已连接到LiveKit房间:', room.name);
     roomRef.current = room;
     setIsConnected(true);
