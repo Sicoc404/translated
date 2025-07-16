@@ -49,6 +49,21 @@ def build_agent_for(language: str) -> AgentSession:
     target_voice_id = language_info.get("voice_id")
     language_name = language_info.get("name", language)
     
+    # 为不同语言的翻译创建提示词（仅作为注释，实际使用需通过其他方式设置）
+    # 日语翻译提示词: f"""
+    # 你是一个专业的实时翻译助手。
+    # 你的任务是将源语言（中文）内容翻译成目标语言（日语）。
+    # 
+    # 翻译规则：
+    # 1. 保持原文的意思和语气
+    # 2. 使用自然流畅的表达方式
+    # 3. 保留专业术语的准确性
+    # 4. 只输出翻译结果，不要添加解释或原文
+    # 5. 如果听不清或无法理解某些词语，尝试根据上下文推断
+    # 
+    # 请直接输出翻译结果，不要包含"翻译："等前缀。
+    # """
+    
     # 创建代理会话
     session = AgentSession(
         # Deepgram STT配置 - 设置为源语言（讲者语言）
@@ -60,21 +75,9 @@ def build_agent_for(language: str) -> AgentSession:
         ),
         
         # Groq LLM配置 - 使用Llama3进行翻译
+        # 注意：Groq插件只支持model参数，不支持system_prompt等参数
         llm=groq.LLM(
-            model="llama3-8b-8192",  # 8B参数的Llama3模型
-            system_prompt=f"""
-            你是一个专业的实时翻译助手。
-            你的任务是将源语言（中文）内容翻译成目标语言（{language_name}）。
-            
-            翻译规则：
-            1. 保持原文的意思和语气
-            2. 使用自然流畅的表达方式
-            3. 保留专业术语的准确性
-            4. 只输出翻译结果，不要添加解释或原文
-            5. 如果听不清或无法理解某些词语，尝试根据上下文推断
-            
-            请直接输出翻译结果，不要包含"翻译："等前缀。
-            """
+            model="llama3-8b-8192"  # 8B参数的Llama3模型
         ),
         
         # Cartesia TTS配置 - 设置为目标语言
