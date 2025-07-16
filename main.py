@@ -12,7 +12,7 @@ import asyncio
 import logging
 from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession
-from agent_config import build_agent_for
+from agent_config import build_agent_for, LANGUAGE_CONFIG
 
 # 配置日志
 logging.basicConfig(
@@ -70,19 +70,40 @@ async def create_agent(room_name: str, language: str) -> Agent:
         room_name=room_name
     )
     
+    # 为不同语言创建翻译提示词
+    language_name = LANGUAGE_CONFIG.get(language, {}).get("name", language)
+    translation_instructions = f"""
+    你是一个专业的实时翻译助手。
+    你的任务是将源语言（中文）内容翻译成目标语言（{language_name}）。
+    
+    翻译规则：
+    1. 保持原文的意思和语气
+    2. 使用自然流畅的表达方式
+    3. 保留专业术语的准确性
+    4. 只输出翻译结果，不要添加解释或原文
+    5. 如果听不清或无法理解某些词语，尝试根据上下文推断
+    
+    请直接输出翻译结果，不要包含"翻译："等前缀。
+    """
+    
+    # 创建翻译指令的Agent对象
+    translation_agent = Agent(instructions=translation_instructions)
+    
     # 注册RPC方法
     @agent.register_rpc_method("start_translation")
     async def start_translation():
         """开始翻译"""
         logger.info(f"收到RPC请求: 开始翻译 ({room_name}/{language})")
-        await agent_session.start_listening()
+        # 在启动时传入translation_agent对象
+        await agent_session.start(agent=translation_agent, room=agent.room)
         return {"status": "started", "room": room_name, "language": language}
     
     @agent.register_rpc_method("stop_translation")
     async def stop_translation():
         """停止翻译"""
         logger.info(f"收到RPC请求: 停止翻译 ({room_name}/{language})")
-        await agent_session.stop_listening()
+        # 在最新版本中，使用stop方法代替stop_listening
+        await agent_session.stop()
         return {"status": "stopped", "room": room_name, "language": language}
     
     return agent
