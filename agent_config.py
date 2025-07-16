@@ -5,8 +5,8 @@
 LiveKit Agent配置 - 构建多语言翻译代理
 """
 
-from livekit.agents import AgentSession
-from livekit.plugins import deepgram, groq, cartesia
+from livekit_agents.session import AgentSession
+from livekit_agents.plugins import deepgram, groq, cartesia
 from typing import Dict, Any
 
 # 语言配置
@@ -98,7 +98,7 @@ def build_agent_for(language: str) -> AgentSession:
     )
     
     # 注意：在使用时，需要在session.start()中传入Agent对象，例如：
-    # from livekit.agents import Agent
+    # from livekit_agents import Agent
     # agent = Agent(instructions=translation_instructions)
     # await session.start(agent=agent, room=room)
     
