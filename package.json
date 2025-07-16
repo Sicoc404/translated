@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "cd frontend && vite",
-    "build": "cd frontend && tsc && vite build",
-    "preview": "cd frontend && vite preview",
+    "dev": "vite",
+    "build": "tsc -p frontend/tsconfig.json && vite build",
+    "preview": "vite preview",
     "start": "python main.py"
   },
   "dependencies": {
