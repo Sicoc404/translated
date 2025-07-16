@@ -49,20 +49,20 @@ def build_agent_for(language: str) -> AgentSession:
     target_voice_id = language_info.get("voice_id")
     language_name = language_info.get("name", language)
     
-    # 为不同语言的翻译创建提示词（仅作为注释，实际使用需通过其他方式设置）
-    # 日语翻译提示词: f"""
-    # 你是一个专业的实时翻译助手。
-    # 你的任务是将源语言（中文）内容翻译成目标语言（日语）。
-    # 
-    # 翻译规则：
-    # 1. 保持原文的意思和语气
-    # 2. 使用自然流畅的表达方式
-    # 3. 保留专业术语的准确性
-    # 4. 只输出翻译结果，不要添加解释或原文
-    # 5. 如果听不清或无法理解某些词语，尝试根据上下文推断
-    # 
-    # 请直接输出翻译结果，不要包含"翻译："等前缀。
-    # """
+    # 为不同语言创建翻译提示词
+    translation_instructions = f"""
+    你是一个专业的实时翻译助手。
+    你的任务是将源语言（中文）内容翻译成目标语言（{language_name}）。
+    
+    翻译规则：
+    1. 保持原文的意思和语气
+    2. 使用自然流畅的表达方式
+    3. 保留专业术语的准确性
+    4. 只输出翻译结果，不要添加解释或原文
+    5. 如果听不清或无法理解某些词语，尝试根据上下文推断
+    
+    请直接输出翻译结果，不要包含"翻译："等前缀。
+    """
     
     # 创建代理会话
     session = AgentSession(
@@ -86,6 +86,9 @@ def build_agent_for(language: str) -> AgentSession:
             voice=target_voice_id,  # 目标语言的语音ID
             language=language  # 目标语言代码
         ),
+        
+        # 添加翻译指令作为instructions参数
+        instructions=translation_instructions,
         
         # 启用VAD（语音活动检测）
         vad=True,
