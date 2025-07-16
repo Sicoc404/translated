@@ -8,7 +8,6 @@ LiveKit Agent配置 - 构建多语言翻译代理
 from livekit.agents import Agent, JobContext
 from livekit.plugins import deepgram, groq, cartesia, silero
 from typing import Dict, Any
-import aiohttp
 
 # 语言配置
 LANGUAGE_CONFIG = {
@@ -76,52 +75,41 @@ async def create_agent_session_for_language(ctx: JobContext, language: str):
         language: 目标语言代码
         
     Returns:
-        配置好的AgentSession
+        配置好的Agent
     """
     if language not in LANGUAGE_CONFIG:
         raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
     
     language_info = LANGUAGE_CONFIG[language]
     
-    # 创建自定义的aiohttp会话（用于解决http session问题）
-    async_session = aiohttp.ClientSession()
+    # 在JobContext内部创建各个组件
+    # VAD（语音活动检测）- 使用Silero VAD
+    vad = silero.VAD.load()
     
-    try:
-        # 在JobContext内部创建各个组件
-        vad = silero.VAD.load()
-        
-        # STT配置 - 设置为源语言（中文）
-        stt = deepgram.STT(
-            model="nova-2-zh",  # 中文模型
-            language="zh",
-            session=async_session,  # 传入自定义session
-        )
-        
-        # LLM配置 - 使用Groq的Llama3进行翻译
-        llm = groq.LLM(
-            model="llama3-8b-8192",
-            session=async_session,  # 传入自定义session
-        )
-        
-        # TTS配置 - 设置为目标语言
-        tts = cartesia.TTS(
-            model="sonic-multilingual",  # 使用多语言模型
-            voice=language_info["voice_id"],
-            session=async_session,  # 传入自定义session
-        )
-        
-        # 创建Agent
-        agent = Agent(
-            instructions=get_translation_instructions(language),
-            vad=vad,
-            stt=stt, 
-            llm=llm,
-            tts=tts,
-        )
-        
-        return agent, async_session
-        
-    except Exception as e:
-        # 如果初始化失败，确保清理session
-        await async_session.close()
-        raise e 
+    # STT配置 - 设置为源语言（中文）
+    stt = deepgram.STT(
+        model="nova-2-zh",  # 中文模型
+        language="zh",
+    )
+    
+    # LLM配置 - 使用Groq的Llama3进行翻译
+    llm = groq.LLM(
+        model="llama3-8b-8192",
+    )
+    
+    # TTS配置 - 设置为目标语言
+    tts = cartesia.TTS(
+        model="sonic-multilingual",  # 使用多语言模型
+        voice=language_info["voice_id"],
+    )
+    
+    # 创建Agent
+    agent = Agent(
+        instructions=get_translation_instructions(language),
+        vad=vad,
+        stt=stt, 
+        llm=llm,
+        tts=tts,
+    )
+    
+    return agent 
