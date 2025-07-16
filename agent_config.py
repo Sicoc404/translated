@@ -64,7 +64,7 @@ def build_agent_for(language: str) -> AgentSession:
     请直接输出翻译结果，不要包含"翻译："等前缀。
     """
     
-    # 创建代理会话
+    # 创建代理会话 - 在LiveKit Agents 1.1.7中，instructions参数应该作为Agent的参数，而不是AgentSession的参数
     session = AgentSession(
         # Deepgram STT配置 - 设置为源语言（讲者语言）
         stt=deepgram.STT(
@@ -87,9 +87,6 @@ def build_agent_for(language: str) -> AgentSession:
             language=language  # 目标语言代码
         ),
         
-        # 添加翻译指令作为instructions参数
-        instructions=translation_instructions,
-        
         # 启用VAD（语音活动检测）
         vad=True,
         
@@ -99,5 +96,10 @@ def build_agent_for(language: str) -> AgentSession:
             "language": language,  # 字幕语言为目标语言
         }
     )
+    
+    # 注意：在使用时，需要在session.start()中传入Agent对象，例如：
+    # from livekit.agents import Agent
+    # agent = Agent(instructions=translation_instructions)
+    # await session.start(agent=agent, room=room)
     
     return session 
