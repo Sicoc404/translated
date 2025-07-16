@@ -2,7 +2,7 @@
 module.exports = {
   content: [
     "./index.html",
-    "./*.{js,ts,jsx,tsx}",
+    "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
@@ -22,6 +22,8 @@ module.exports = {
       },
       animation: {
         'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'spin': 'spin 10s linear infinite',
+        'ping': 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
       },
     },
   },
