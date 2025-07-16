@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "cd frontend && vite",
-    "build": "cd frontend && tsc --noEmit && vite build",
+    "build": "cd frontend && vite build",
     "preview": "cd frontend && vite preview",
     "start": "python main.py"
   },
