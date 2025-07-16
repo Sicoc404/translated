@@ -5,52 +5,55 @@
 LiveKit Agent配置 - 构建多语言翻译代理
 """
 
-from livekit.agents import Agent, AgentSession
+from livekit.agents import Agent, JobContext
 from livekit.plugins import deepgram, groq, cartesia, silero
 from typing import Dict, Any
+import aiohttp
 
 # 语言配置
 LANGUAGE_CONFIG = {
     "ja": {
         "name": "日语",
-        "voice_id": "your-japanese-voice-id",  # 替换为实际的Cartesia日语voice ID
+        "voice_id": "95856005-0332-41b0-935f-352e296aa0df",  # Cartesia日语voice ID
+        "deepgram_model": "nova-2-ja",
     },
     "ko": {
-        "name": "韩语",
-        "voice_id": "your-korean-voice-id",  # 替换为实际的Cartesia韩语voice ID
+        "name": "韩语", 
+        "voice_id": "7d787990-4c3a-4766-9450-8c3ac6718b13",  # Cartesia韩语voice ID
+        "deepgram_model": "nova-2-ko",
     },
     "vi": {
         "name": "越南语",
-        "voice_id": "your-vietnamese-voice-id",  # 替换为实际的Cartesia越南语voice ID
+        "voice_id": "f9836c6e-a0bd-460e-9d3c-f7299fa60f94",  # Cartesia越南语voice ID  
+        "deepgram_model": "nova-2-general",
     },
     "ms": {
         "name": "马来语",
-        "voice_id": "your-malay-voice-id",  # 替换为实际的Cartesia马来语voice ID
+        "voice_id": "7d787990-4c3a-4766-9450-8c3ac6718b13",  # 使用英语voice作为马来语
+        "deepgram_model": "nova-2-general",
     }
 }
 
 # 源语言配置（讲者语言）
 SOURCE_LANGUAGE = "zh"  # 中文
 
-def build_agent_for(language: str) -> tuple[Agent, AgentSession]:
+def get_translation_instructions(language: str) -> str:
     """
-    为指定语言构建翻译代理和会话
+    获取指定语言的翻译指令
     
     Args:
-        language: 目标语言代码，例如 "ja"、"ko"、"vi"、"ms"
+        language: 目标语言代码
         
     Returns:
-        配置好的(Agent, AgentSession)元组
+        翻译指令字符串
     """
     if language not in LANGUAGE_CONFIG:
         raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
     
     language_info = LANGUAGE_CONFIG.get(language, {})
-    target_voice_id = language_info.get("voice_id")
     language_name = language_info.get("name", language)
     
-    # 为不同语言创建翻译提示词
-    translation_instructions = f"""
+    return f"""
     你是一个专业的实时翻译助手。
     你的任务是将源语言（中文）内容翻译成目标语言（{language_name}）。
     
@@ -63,33 +66,62 @@ def build_agent_for(language: str) -> tuple[Agent, AgentSession]:
     
     请直接输出翻译结果，不要包含"翻译："等前缀。
     """
+
+async def create_agent_session_for_language(ctx: JobContext, language: str):
+    """
+    在JobContext内部为指定语言创建Agent和AgentSession
     
-    # 创建Agent对象 - 在1.1.7版本中，Agent是独立的对象
-    agent = Agent(
-        instructions=translation_instructions,
-    )
-    
-    # 创建AgentSession - 在1.1.7版本中，AgentSession的参数结构改变了
-    session = AgentSession(
-        # VAD（语音活动检测）- 使用Silero VAD
-        vad=silero.VAD.load(),
+    Args:
+        ctx: JobContext实例
+        language: 目标语言代码
         
-        # STT配置 - 设置为源语言（讲者语言）
-        stt=deepgram.STT(
-            model="nova-3",
-            language=SOURCE_LANGUAGE,
-        ),
+    Returns:
+        配置好的AgentSession
+    """
+    if language not in LANGUAGE_CONFIG:
+        raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
+    
+    language_info = LANGUAGE_CONFIG[language]
+    
+    # 创建自定义的aiohttp会话（用于解决http session问题）
+    async_session = aiohttp.ClientSession()
+    
+    try:
+        # 在JobContext内部创建各个组件
+        vad = silero.VAD.load()
+        
+        # STT配置 - 设置为源语言（中文）
+        stt = deepgram.STT(
+            model="nova-2-zh",  # 中文模型
+            language="zh",
+            session=async_session,  # 传入自定义session
+        )
         
         # LLM配置 - 使用Groq的Llama3进行翻译
-        llm=groq.LLM(
-            model="llama3-8b-8192"  # 8B参数的Llama3模型
-        ),
+        llm = groq.LLM(
+            model="llama3-8b-8192",
+            session=async_session,  # 传入自定义session
+        )
         
         # TTS配置 - 设置为目标语言
-        tts=cartesia.TTS(
-            model="sonic-2",  # 使用Sonic-2模型
-            voice=target_voice_id,  # 目标语言的语音ID
-        ),
-    )
-    
-    return agent, session 
+        tts = cartesia.TTS(
+            model="sonic-multilingual",  # 使用多语言模型
+            voice=language_info["voice_id"],
+            session=async_session,  # 传入自定义session
+        )
+        
+        # 创建Agent
+        agent = Agent(
+            instructions=get_translation_instructions(language),
+            vad=vad,
+            stt=stt, 
+            llm=llm,
+            tts=tts,
+        )
+        
+        return agent, async_session
+        
+    except Exception as e:
+        # 如果初始化失败，确保清理session
+        await async_session.close()
+        raise e 
