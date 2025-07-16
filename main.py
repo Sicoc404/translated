@@ -11,7 +11,11 @@ import sys
 import asyncio
 import logging
 from dotenv import load_dotenv
-from livekit.agents import Agent, AgentSession
+# 修正导入路径
+import livekit_agents
+from livekit_agents.session import AgentSession
+from livekit_agents.agent import Agent
+print("✅ LiveKit Agents version:", livekit_agents.__version__)
 from agent_config import build_agent_for, LANGUAGE_CONFIG
 
 # 配置日志
