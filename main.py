@@ -11,7 +11,7 @@ import sys
 import asyncio
 import logging
 from dotenv import load_dotenv
-from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents import JobContext, WorkerOptions, cli, JobProcess
 from agent_config import create_agent_session_for_language, LANGUAGE_CONFIG
 
 # 加载环境变量
@@ -92,6 +92,18 @@ async def entrypoint(ctx: JobContext):
         await session_to_close.close()
         logger.info(f"{language_name} 翻译代理已停止，资源已清理")
 
+def prewarm(proc: JobProcess):
+    """
+    预热函数 - 在每个子进程启动时执行
+    可以在此处加载模型或执行其他预热操作
+    
+    Args:
+        proc: JobProcess实例
+    """
+    logger.info("正在预热翻译模型和连接...")
+    # 这里可以添加模型预加载代码
+    # 例如预加载Silero VAD模型等
+
 def main():
     """
     主函数 - 使用LiveKit CLI启动Worker
@@ -118,8 +130,8 @@ def main():
     # 配置Worker选项
     opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
-        # 可以添加其他worker选项
-        prewarm_connections=True,  # 预热连接
+        prewarm_fnc=prewarm,
+        num_idle_processes=1,  # 控制空闲进程数量
     )
     
     # 运行Agent Worker
