@@ -5,8 +5,8 @@
 LiveKit Agent配置 - 构建多语言翻译代理
 """
 
-from livekit_agents.session import AgentSession
-from livekit_agents.plugins import deepgram, groq, cartesia
+from livekit.agents import Agent, AgentSession
+from livekit.plugins import deepgram, groq, cartesia, silero
 from typing import Dict, Any
 
 # 语言配置
@@ -32,15 +32,15 @@ LANGUAGE_CONFIG = {
 # 源语言配置（讲者语言）
 SOURCE_LANGUAGE = "zh"  # 中文
 
-def build_agent_for(language: str) -> AgentSession:
+def build_agent_for(language: str) -> tuple[Agent, AgentSession]:
     """
-    为指定语言构建翻译代理会话
+    为指定语言构建翻译代理和会话
     
     Args:
         language: 目标语言代码，例如 "ja"、"ko"、"vi"、"ms"
         
     Returns:
-        配置好的AgentSession实例
+        配置好的(Agent, AgentSession)元组
     """
     if language not in LANGUAGE_CONFIG:
         raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
@@ -64,42 +64,32 @@ def build_agent_for(language: str) -> AgentSession:
     请直接输出翻译结果，不要包含"翻译："等前缀。
     """
     
-    # 创建代理会话 - 在LiveKit Agents 1.1.7中，instructions参数应该作为Agent的参数，而不是AgentSession的参数
+    # 创建Agent对象 - 在1.1.7版本中，Agent是独立的对象
+    agent = Agent(
+        instructions=translation_instructions,
+    )
+    
+    # 创建AgentSession - 在1.1.7版本中，AgentSession的参数结构改变了
     session = AgentSession(
-        # Deepgram STT配置 - 设置为源语言（讲者语言）
+        # VAD（语音活动检测）- 使用Silero VAD
+        vad=silero.VAD.load(),
+        
+        # STT配置 - 设置为源语言（讲者语言）
         stt=deepgram.STT(
             model="nova-3",
             language=SOURCE_LANGUAGE,
-            smart_format=True,
-            endpointing_ms=1000  # 1秒静音后结束当前句子
         ),
         
-        # Groq LLM配置 - 使用Llama3进行翻译
-        # 注意：Groq插件只支持model参数，不支持system_prompt等参数
+        # LLM配置 - 使用Groq的Llama3进行翻译
         llm=groq.LLM(
             model="llama3-8b-8192"  # 8B参数的Llama3模型
         ),
         
-        # Cartesia TTS配置 - 设置为目标语言
+        # TTS配置 - 设置为目标语言
         tts=cartesia.TTS(
             model="sonic-2",  # 使用Sonic-2模型
             voice=target_voice_id,  # 目标语言的语音ID
-            language=language  # 目标语言代码
         ),
-        
-        # 启用VAD（语音活动检测）
-        vad=True,
-        
-        # 设置转录选项
-        transcription_options={
-            "enabled": True,  # 启用字幕
-            "language": language,  # 字幕语言为目标语言
-        }
     )
     
-    # 注意：在使用时，需要在session.start()中传入Agent对象，例如：
-    # from livekit_agents import Agent
-    # agent = Agent(instructions=translation_instructions)
-    # await session.start(agent=agent, room=room)
-    
-    return session 
+    return agent, session 
