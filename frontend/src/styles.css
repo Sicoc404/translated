@@ -5,6 +5,14 @@
 /* 自定义样式 */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* 确保渐变背景覆盖整个屏幕 */
+.bg-gradient-to-br {
+  background-size: 400% 400%;
 }
 
 /* 渐变动画 */
@@ -17,8 +25,32 @@ body {
   }
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-spin {
+  animation: spin 10s linear infinite;
+}
+
+.animate-ping {
+  animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
 /* 字幕动画 */
@@ -35,4 +67,23 @@ body {
 
 .subtitle-animation {
   animation: fadeIn 0.3s ease-out;
+}
+
+/* 确保模糊效果正常工作 */
+.blur-3xl {
+  filter: blur(64px);
+}
+
+.blur-2xl {
+  filter: blur(40px);
+}
+
+.backdrop-blur-md {
+  backdrop-filter: blur(12px);
+}
+
+/* 确保渐变文本效果 */
+.bg-clip-text {
+  -webkit-background-clip: text;
+  background-clip: text;
 } 
