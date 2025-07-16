@@ -14,4 +14,7 @@ export default defineConfig({
     port: Number(process.env.PORT) || 5173,
     strictPort: true,
   },
+  build: {
+    chunkSizeWarningLimit: 1000, // 增加警告阈值到1000kB
+  }
 });
