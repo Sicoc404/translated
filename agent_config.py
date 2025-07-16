@@ -56,7 +56,6 @@ def build_agent_for(language: str) -> AgentSession:
             model="nova-3",
             language=SOURCE_LANGUAGE,
             smart_format=True,
-            endpointing=True,
             endpointing_ms=1000  # 1秒静音后结束当前句子
         ),
         
