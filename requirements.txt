@@ -4,7 +4,7 @@ livekit-agents==1.1.7
 # 插件依赖
 livekit-plugins-deepgram>=0.7,<2.0
 livekit-plugins-groq>=0.1.1,<2.0
-livekit-plugins-cartesia>=0.8,<1.0
+livekit-plugins-cartesia>=0.4.0,<2.0
 livekit-plugins-silero>=0.7,<1.0
 
 # 其他必要依赖
