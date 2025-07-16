@@ -1,7 +1,7 @@
 fastapi==0.109.0
 uvicorn==0.25.0
 python-dotenv>=1.0.0
-pydantic==1.0
+pydantic>=1.7.4,<3.0.0
 # 替换为单独的依赖项，避免需要编译的包
 livekit-agents==1.0.0
 livekit-plugins-deepgram==1.0.0
