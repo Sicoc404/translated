@@ -11,11 +11,9 @@ import sys
 import asyncio
 import logging
 from dotenv import load_dotenv
-# 修正导入路径
-import livekit_agents
-from livekit_agents.session import AgentSession
-from livekit_agents.agent import Agent
-print("✅ LiveKit Agents version:", livekit_agents.__version__)
+# 修正导入路径 - 使用新的导入方式
+from livekit.agents import Agent, JobContext, WorkerOptions, cli
+from livekit.rtc import Room, RoomOptions
 from agent_config import build_agent_for, LANGUAGE_CONFIG
 
 # 配置日志
@@ -34,121 +32,90 @@ ROOM_LANGUAGE_MAP = {
     "Pryme-Malay": "ms"
 }
 
-# 保存所有运行中的代理实例
-active_agents = {}
+# 保存所有运行中的会话实例
+active_sessions = {}
 
-async def create_agent(room_name: str, language: str) -> Agent:
+async def create_room_connection(room_name: str) -> Room:
     """
-    创建并配置翻译代理
+    创建并连接到LiveKit房间
     
     Args:
         room_name: LiveKit房间名
-        language: 目标语言代码
     
     Returns:
-        配置好的Agent实例
+        已连接的Room实例
     """
-    logger.info(f"正在为房间 '{room_name}' 构建 {language} 语言翻译代理...")
+    from livekit.rtc import Room, RoomOptions
+    from livekit.api import AccessToken, VideoGrants
     
-    # 构建代理会话
-    try:
-        agent_session = build_agent_for(language)
-    except ValueError as e:
-        logger.error(f"构建代理失败: {str(e)}")
-        return None
-    
-    # 添加状态变化回调
-    def on_state_changed(old_state: str, new_state: str):
-        logger.info(f"代理状态变化 [{room_name}/{language}]: {old_state} -> {new_state}")
-    
-    agent_session.on_state_changed = on_state_changed
-    
-    # 创建Agent实例
-    agent = Agent(
-        identity=f"translator-{language}",
-        name=f"{language}翻译员",
-        session=agent_session,
-        url=os.getenv("LIVEKIT_URL"),
-        api_key=os.getenv("LIVEKIT_API_KEY"),
-        api_secret=os.getenv("LIVEKIT_API_SECRET"),
-        room_name=room_name
+    # 创建访问令牌
+    token = (
+        AccessToken(os.getenv("LIVEKIT_API_KEY"), os.getenv("LIVEKIT_API_SECRET"))
+        .with_identity(f"translator-agent")
+        .with_name("翻译助手")
+        .with_grants(VideoGrants(room=room_name, room_join=True))
+        .to_jwt()
     )
     
-    # 为不同语言创建翻译提示词
-    language_name = LANGUAGE_CONFIG.get(language, {}).get("name", language)
-    translation_instructions = f"""
-    你是一个专业的实时翻译助手。
-    你的任务是将源语言（中文）内容翻译成目标语言（{language_name}）。
+    # 创建房间实例
+    room = Room()
     
-    翻译规则：
-    1. 保持原文的意思和语气
-    2. 使用自然流畅的表达方式
-    3. 保留专业术语的准确性
-    4. 只输出翻译结果，不要添加解释或原文
-    5. 如果听不清或无法理解某些词语，尝试根据上下文推断
+    # 连接到房间
+    await room.connect(os.getenv("LIVEKIT_URL"), token, RoomOptions())
     
-    请直接输出翻译结果，不要包含"翻译："等前缀。
-    """
-    
-    # 创建翻译指令的Agent对象
-    translation_agent = Agent(instructions=translation_instructions)
-    
-    # 注册RPC方法
-    @agent.register_rpc_method("start_translation")
-    async def start_translation():
-        """开始翻译"""
-        logger.info(f"收到RPC请求: 开始翻译 ({room_name}/{language})")
-        # 在启动时传入translation_agent对象
-        await agent_session.start(agent=translation_agent, room=agent.room)
-        return {"status": "started", "room": room_name, "language": language}
-    
-    @agent.register_rpc_method("stop_translation")
-    async def stop_translation():
-        """停止翻译"""
-        logger.info(f"收到RPC请求: 停止翻译 ({room_name}/{language})")
-        # 在最新版本中，使用stop方法代替stop_listening
-        await agent_session.stop()
-        return {"status": "stopped", "room": room_name, "language": language}
-    
-    return agent
+    return room
 
-async def run_agent(agent: Agent, room_name: str, language: str):
+async def run_translation_agent(room_name: str, language: str):
     """
-    运行翻译代理并保持连接
+    运行特定语言的翻译代理
     
     Args:
-        agent: 要运行的Agent实例
         room_name: LiveKit房间名
         language: 目标语言代码
     """
+    logger.info(f"正在为房间 '{room_name}' 启动 {language} 语言翻译代理...")
+    
     try:
-        # 启动代理
-        logger.info(f"正在连接代理到房间 '{room_name}'...")
-        await agent.start()
-        logger.info(f"代理已成功连接到房间 '{room_name}' ({language})")
+        # 连接到房间
+        room = await create_room_connection(room_name)
         
-        # 保持代理运行
+        # 构建代理和会话
+        agent, session = build_agent_for(language)
+        
+        # 保存会话实例，以便后续管理
+        active_sessions[room_name] = session
+        
+        # 启动会话
+        await session.start(agent=agent, room=room)
+        
+        # 生成初始回复
+        language_name = LANGUAGE_CONFIG.get(language, {}).get("name", language)
+        await session.generate_reply(
+            instructions=f"向用户问好，告诉他们这是一个中文到{language_name}的翻译助手"
+        )
+        
+        # 保持会话运行
         while True:
             await asyncio.sleep(60)  # 每分钟检查一次
-            if agent.is_stopped():
-                logger.warning(f"代理已停止 ({room_name}/{language})，正在尝试重新连接...")
-                try:
-                    await agent.start()
-                    logger.info(f"代理已重新连接 ({room_name}/{language})")
-                except Exception as e:
-                    logger.error(f"代理重新连接失败 ({room_name}/{language}): {str(e)}")
-    
+            
     except Exception as e:
-        logger.error(f"运行代理时出错 ({room_name}/{language}): {str(e)}")
-    
-    # 注意: 我们不在这里关闭代理，因为我们希望它一直运行
-    # 关闭操作会在主函数的finally块中处理
+        logger.error(f"运行翻译代理时出错 ({room_name}/{language}): {str(e)}")
+    finally:
+        # 停止会话
+        if room_name in active_sessions:
+            try:
+                await active_sessions[room_name].stop()
+                logger.info(f"已停止 {room_name} 房间的翻译会话")
+            except Exception as e:
+                logger.error(f"停止会话时出错 ({room_name}): {str(e)}")
+            
+            # 从活动会话中移除
+            del active_sessions[room_name]
 
 async def run_all_agents():
     """启动所有语言的翻译代理"""
     # 检查必要的环境变量
-    required_env_vars = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", 
-                         "DEEPGRAM_API_KEY", "GROQ_API_KEY", "CARTESIA_API_KEY"]
+    required_env_vars = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
     
     missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     if missing_vars:
@@ -159,35 +126,22 @@ async def run_all_agents():
     # 为每个房间创建并启动代理
     tasks = []
     for room_name, language in ROOM_LANGUAGE_MAP.items():
-        try:
-            # 创建代理
-            agent = await create_agent(room_name, language)
-            if agent:
-                # 保存代理实例
-                active_agents[room_name] = agent
-                # 创建运行任务
-                task = asyncio.create_task(run_agent(agent, room_name, language))
-                tasks.append(task)
-                logger.info(f"已创建 {room_name} 房间的 {language} 语言翻译代理")
-            else:
-                logger.error(f"无法为 {room_name} 房间创建 {language} 语言翻译代理")
-        except Exception as e:
-            logger.error(f"创建代理时出错 ({room_name}/{language}): {str(e)}")
+        task = asyncio.create_task(run_translation_agent(room_name, language))
+        tasks.append(task)
+        logger.info(f"已创建 {room_name} 房间的 {language} 语言翻译代理任务")
     
     # 等待所有任务完成（实际上它们会一直运行）
     if tasks:
         await asyncio.gather(*tasks)
 
-async def shutdown_agents():
-    """关闭所有运行中的代理"""
-    for room_name, agent in active_agents.items():
-        if agent and not agent.is_stopped():
-            logger.info(f"正在关闭 {room_name} 房间的代理...")
-            try:
-                await agent.stop()
-                logger.info(f"已关闭 {room_name} 房间的代理")
-            except Exception as e:
-                logger.error(f"关闭代理时出错 ({room_name}): {str(e)}")
+async def shutdown_sessions():
+    """关闭所有运行中的会话"""
+    for room_name, session in active_sessions.items():
+        try:
+            await session.stop()
+            logger.info(f"已关闭 {room_name} 房间的会话")
+        except Exception as e:
+            logger.error(f"关闭会话时出错 ({room_name}): {str(e)}")
 
 async def main_async():
     """异步主函数"""
@@ -198,7 +152,7 @@ async def main_async():
     except Exception as e:
         logger.error(f"运行代理时出错: {str(e)}")
     finally:
-        await shutdown_agents()
+        await shutdown_sessions()
 
 def main():
     """主函数"""
