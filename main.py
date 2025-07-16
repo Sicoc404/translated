@@ -62,13 +62,9 @@ async def entrypoint(ctx: JobContext):
     language_name = LANGUAGE_CONFIG[target_language]["name"]
     logger.info(f"为房间 '{room_name}' 启动 {language_name} 翻译代理...")
     
-    # 记录保持会话的变量
-    session_to_close = None
-    
     try:
         # 在JobContext内部创建Agent
-        agent, session = await create_agent_session_for_language(ctx, target_language)
-        session_to_close = session
+        agent = await create_agent_session_for_language(ctx, target_language)
         
         # 启动Agent
         agent.start(ctx.room)
@@ -78,19 +74,12 @@ async def entrypoint(ctx: JobContext):
         # 可选：发送初始消息
         await agent.say(f"你好！我是 {language_name} 翻译助手，我会将中文实时翻译成 {language_name}。")
         
+        # 保持连接直到代理关闭
+        await agent.aclose()
+        
     except Exception as e:
         logger.error(f"启动 {language_name} 翻译代理时出错: {e}")
-        if session_to_close:
-            await session_to_close.close()
         raise
-    
-    # 保持连接直到代理关闭
-    await agent.aclose()
-    
-    # 清理资源
-    if session_to_close:
-        await session_to_close.close()
-        logger.info(f"{language_name} 翻译代理已停止，资源已清理")
 
 def prewarm(proc: JobProcess):
     """
