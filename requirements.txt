@@ -1,12 +1,12 @@
---extra-index-url https://pypi.org/simple
-fastapi==0.109.0
-uvicorn==0.25.0
-python-dotenv>=1.0.0
-pydantic>=1.7.4,<3.0.0
-# 替换为单独的依赖项，避免需要编译的包
+# LiveKit Agents 1.1.7 核心库
 livekit-agents==1.1.7
-livekit-plugins-deepgram==1.0.0
-livekit-plugins-groq==1.0.0
-livekit-plugins-cartesia==1.0.0
-livekit-api>=1.0.0
-python-multipart==0.0.6 
+
+# 插件依赖
+livekit-plugins-deepgram==0.7.11
+livekit-plugins-groq==0.4.2  
+livekit-plugins-cartesia==0.8.7
+livekit-plugins-silero==0.7.11
+
+# 其他必要依赖
+python-dotenv==1.0.0
+asyncio 
