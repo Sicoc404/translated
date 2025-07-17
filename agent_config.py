@@ -6,10 +6,12 @@ LiveKit Agent配置 - 构建多语言翻译代理
 符合LiveKit Agents 1.1.7 API规范
 """
 
+import os
 import logging
-from livekit.agents import Agent, AgentSession
-from livekit.plugins import deepgram, groq, cartesia, silero
-from typing import Dict, Any, Tuple
+from livekit.agents import Agent, AgentSession, llm
+from livekit.plugins import deepgram, cartesia, silero
+from typing import Dict, Any, Tuple, AsyncIterator
+from groq import Groq
 
 # 配置日志
 logger = logging.getLogger("agent-config")
@@ -40,6 +42,96 @@ LANGUAGE_CONFIG = {
 
 # 源语言配置（讲者语言）
 SOURCE_LANGUAGE = "zh"  # 中文
+
+class CustomGroqLLM(llm.LLM):
+    """
+    自定义Groq LLM实现，使用官方groq客户端
+    """
+    
+    def __init__(self, model: str = "llama3-8b-8192"):
+        super().__init__()
+        self._model = model
+        self._client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        logger.info(f"🧠 初始化官方Groq客户端 - 模型: {model}")
+    
+    def chat(
+        self,
+        *,
+        chat_ctx: llm.ChatContext,
+        fnc_ctx: llm.FunctionContext | None = None,
+        temperature: float | None = None,
+        n: int | None = None,
+    ) -> "llm.LLMStream":
+        """
+        发送聊天请求到Groq
+        """
+        return CustomGroqLLMStream(
+            client=self._client,
+            model=self._model,
+            chat_ctx=chat_ctx,
+            temperature=temperature or 0.7,
+        )
+
+class CustomGroqLLMStream(llm.LLMStream):
+    """
+    自定义Groq LLM流实现
+    """
+    
+    def __init__(
+        self,
+        client: Groq,
+        model: str,
+        chat_ctx: llm.ChatContext,
+        temperature: float,
+    ):
+        super().__init__(chat_ctx=chat_ctx, fnc_ctx=None)
+        self._client = client
+        self._model = model
+        self._temperature = temperature
+        
+    async def _main_task(self) -> None:
+        """
+        主要的LLM处理任务
+        """
+        try:
+            # 转换ChatContext为Groq API格式
+            messages = []
+            for msg in self._chat_ctx.messages:
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
+            
+            logger.info(f"🧠 发送请求到Groq: {len(messages)} 条消息")
+            logger.info(f"🧠 用户输入: '{messages[-1]['content'][:100]}...'")
+            
+            # 调用官方Groq客户端
+            response = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                temperature=self._temperature,
+                max_tokens=1000,
+            )
+            
+            # 获取回复内容
+            content = response.choices[0].message.content
+            logger.info(f"🌍 Groq翻译结果: '{content}'")
+            
+            # 创建回复消息并发送
+            reply_msg = llm.ChatMessage.create(
+                text=content,
+                role="assistant"
+            )
+            
+            self._event_ch.send_nowait(llm.LLMEvent(type="content_part_added", content_part=reply_msg))
+            self._event_ch.send_nowait(llm.LLMEvent(type="content_done"))
+            
+        except Exception as e:
+            logger.error(f"❌ Groq LLM处理失败: {e}")
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}")
+            raise
 
 def get_translation_instructions(language: str) -> str:
     """
@@ -112,15 +204,13 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         logger.error(f"❌ STT初始化失败: {e}")
         raise
     
-    # LLM配置 - 使用Groq的Llama3进行翻译
+    # LLM配置 - 使用自定义Groq客户端
     try:
-        logger.info(f"🧠 初始化LLM (Groq Llama3-8b-8192)...")
-        llm = groq.LLM(
-            model="llama3-8b-8192",
-        )
-        logger.info(f"✅ LLM初始化成功 - 模型: llama3-8b-8192")
+        logger.info(f"🧠 初始化自定义Groq LLM (llama3-8b-8192)...")
+        llm_instance = CustomGroqLLM(model="llama3-8b-8192")
+        logger.info(f"✅ 自定义Groq LLM初始化成功 - 模型: llama3-8b-8192")
     except Exception as e:
-        logger.error(f"❌ LLM初始化失败: {e}")
+        logger.error(f"❌ 自定义Groq LLM初始化失败: {e}")
         raise
     
     # TTS配置 - 设置为目标语言
@@ -136,7 +226,7 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         raise
     
     logger.info(f"🎉 {language_name} 翻译组件创建完成!")
-    return vad, stt, llm, tts
+    return vad, stt, llm_instance, tts
 
 def create_translation_agent(language: str) -> Agent:
     """
