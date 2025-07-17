@@ -1,7 +1,82 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Volume2, Mic, Settings, ArrowLeft } from 'lucide-react';
-import { LiveKitRoom, TrackToggle, useConnectionState, useRoomInfo } from '@livekit/components-react';
+import { LiveKitRoom, TrackToggle, useConnectionState, useRoomInfo, RoomAudioRenderer, useRoomContext } from '@livekit/components-react';
 import { Room, RoomOptions, RemoteTrack, DataPacket_Kind, ConnectionState, RoomEvent, RemoteParticipant, RemoteTrackPublication, Track } from 'livekit-client';
+
+// LiveKit房间内部组件，用于访问room实例
+function LiveKitRoomComponents({ 
+  roomRef, 
+  setIsConnected, 
+  setAgentParticipant, 
+  handleParticipantConnected, 
+  handleDataReceived 
+}: any) {
+  const room = useRoomContext();
+  
+  useEffect(() => {
+    if (!room) return;
+    
+    console.log('🎉 已连接到LiveKit房间:', room.name);
+    console.log('🔍 房间详细信息:', {
+      name: room.name,
+      localParticipant: room.localParticipant?.identity,
+      participants: Array.from(room.participants.keys())
+    });
+    
+    roomRef.current = room;
+    setIsConnected(true);
+    
+    // 监听本地participant的track发布事件
+    room.localParticipant.on('trackPublished', (publication: any) => {
+      console.log('📤 本地track已发布:', {
+        kind: publication.kind,
+        source: publication.source,
+        trackSid: publication.trackSid,
+        enabled: publication.track?.enabled,
+        muted: publication.track?.muted
+      });
+    });
+    
+    // 监听本地participant的track取消发布事件
+    room.localParticipant.on('trackUnpublished', (publication: any) => {
+      console.log('📤❌ 本地track已取消发布:', publication.kind);
+    });
+    
+    // 监听远程参与者事件
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    room.participants.forEach(participant => {
+      handleParticipantConnected(participant);
+    });
+    
+    // 监听数据接收
+    room.on(RoomEvent.DataReceived, handleDataReceived);
+    
+    room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
+      console.log('🔗 房间连接状态变化:', state);
+      if (state === ConnectionState.Disconnected) {
+        setIsConnected(false);
+        setAgentParticipant(null);
+      }
+    });
+    
+         // 检查麦克风track
+     setTimeout(() => {
+       const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
+       console.log('🎤 当前麦克风track状态:', {
+         hasTrack: !!micTrack,
+         enabled: micTrack?.track ? !micTrack.track.isMuted : false,
+         muted: micTrack?.track?.isMuted,
+         publication: micTrack ? {
+           trackSid: micTrack.trackSid,
+           subscribed: micTrack.isSubscribed
+         } : null
+       });
+     }, 1000);
+    
+  }, [room]);
+  
+  return null;
+}
 
 export default function PrymeUI() {
   // 状态变量
@@ -36,7 +111,8 @@ export default function PrymeUI() {
       console.log(`正在获取房间 ${roomName} 的token...`);
       
       // 调用后端API获取token
-      const response = await fetch('https://translated-backed.onrender.com/api/token', {
+      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed.onrender.com';
+      const response = await fetch(`${tokenServerUrl}/api/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -122,37 +198,109 @@ export default function PrymeUI() {
   };
 
   // 处理房间连接
-  const handleRoomConnected = (room: any) => {
-    console.log('已连接到LiveKit房间:', room.name);
-    roomRef.current = room;
-    setIsConnected(true);
-    
-    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    room.participants.forEach(participant => {
-      handleParticipantConnected(participant);
-    });
-    
-    room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
-      console.log('房间连接状态变化:', state);
-      if (state === ConnectionState.Disconnected) {
-        setIsConnected(false);
-        setAgentParticipant(null);
-      }
-    });
+  const handleRoomConnected = () => {
+    // 延迟获取room实例，因为onConnected不传递room参数
+    setTimeout(() => {
+      const room = roomRef.current;
+      if (!room) return;
+      
+      console.log('🎉 已连接到LiveKit房间:', room.name);
+      console.log('🔍 房间详细信息:', {
+        name: room.name,
+        localParticipant: room.localParticipant?.identity,
+        participants: Array.from(room.participants.keys())
+      });
+      
+      setIsConnected(true);
+      
+      // 监听本地participant的track发布事件
+      room.localParticipant.on('trackPublished', (publication: any) => {
+        console.log('📤 本地track已发布:', {
+          kind: publication.kind,
+          source: publication.source,
+          trackSid: publication.trackSid,
+          enabled: publication.track?.enabled,
+          muted: publication.track?.muted
+        });
+      });
+      
+      // 监听本地participant的track取消发布事件
+      room.localParticipant.on('trackUnpublished', (publication: any) => {
+        console.log('📤❌ 本地track已取消发布:', publication.kind);
+      });
+      
+      // 监听麦克风权限和状态
+      room.localParticipant.on('permissionChanged', (permission: any) => {
+        console.log('🎤 权限变化:', permission);
+      });
+      
+      // 监听远程参与者事件
+      room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      room.participants.forEach(participant => {
+        handleParticipantConnected(participant);
+      });
+      
+      // 监听数据接收
+      room.on(RoomEvent.DataReceived, handleDataReceived);
+      
+      room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
+        console.log('🔗 房间连接状态变化:', state);
+        if (state === ConnectionState.Disconnected) {
+          setIsConnected(false);
+          setAgentParticipant(null);
+        }
+      });
+      
+      // 立即检查是否有麦克风track
+      setTimeout(() => {
+        const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
+        console.log('🎤 当前麦克风track状态:', {
+          hasTrack: !!micTrack,
+          enabled: micTrack?.track?.enabled,
+          muted: micTrack?.track?.muted,
+          publication: micTrack ? {
+            trackSid: micTrack.trackSid,
+            subscribed: micTrack.subscribed
+          } : null
+        });
+      }, 1000);
+    }, 100);
   };
 
   // 处理参与者加入
   const handleParticipantConnected = (participant: any) => {
-    console.log('参与者加入:', participant.identity);
+    console.log('👥 参与者加入:', {
+      identity: participant.identity,
+      kind: participant.kind,
+      tracks: Array.from(participant.tracks.keys())
+    });
     
-    if (participant.identity.includes('translator')) {
-      console.log('找到翻译代理:', participant.identity);
+    if (participant.identity.includes('translator') || participant.identity.includes('agent')) {
+      console.log('🤖 找到翻译代理:', participant.identity);
       setAgentParticipant(participant);
       
-      participant.on('trackSubscribed', handleTrackSubscribed);
-      participant.on('trackUnsubscribed', handleTrackUnsubscribed);
+      // 监听track订阅事件
+      participant.on('trackSubscribed', (track: any, publication: any) => {
+        console.log('📥 Agent track已订阅:', {
+          kind: track.kind,
+          source: publication.source,
+          trackSid: publication.trackSid
+        });
+        handleTrackSubscribed(track, publication);
+      });
       
-      participant.tracks.forEach(publication => {
+      participant.on('trackUnsubscribed', (track: any) => {
+        console.log('📥❌ Agent track已取消订阅:', track.kind);
+        handleTrackUnsubscribed(track);
+      });
+      
+      // 检查已有tracks
+      participant.tracks.forEach((publication: any) => {
+        console.log('🔍 检查现有Agent track:', {
+          kind: publication.kind,
+          subscribed: publication.subscribed,
+          track: !!publication.track
+        });
         if (publication.track) {
           handleTrackSubscribed(publication.track, publication);
         }
@@ -162,14 +310,47 @@ export default function PrymeUI() {
 
   // 处理轨道订阅
   const handleTrackSubscribed = (track: any, publication: any) => {
-    console.log('订阅轨道:', track.kind);
+    console.log('📥 订阅到新轨道:', {
+      kind: track.kind,
+      source: publication?.source,
+      enabled: track.enabled,
+      muted: track.muted
+    });
     
     if (track.kind === Track.Kind.Audio) {
-      const audioElement = track.attach();
-      audioRef.current = audioElement;
-      audioElement.volume = volume;
-      audioElement.play();
-      setIsPlaying(true);
+      console.log('🔊 处理音频轨道...');
+      try {
+        const audioElement = track.attach();
+        audioRef.current = audioElement;
+        audioElement.volume = volume;
+        
+        // 添加音频事件监听
+        audioElement.addEventListener('play', () => {
+          console.log('🔊✅ 音频开始播放');
+        });
+        
+        audioElement.addEventListener('pause', () => {
+          console.log('🔊⏸️ 音频暂停');
+        });
+        
+        audioElement.addEventListener('ended', () => {
+          console.log('🔊🔚 音频播放结束');
+        });
+        
+        audioElement.addEventListener('error', (e: any) => {
+          console.error('🔊❌ 音频播放错误:', e);
+        });
+        
+        audioElement.play().then(() => {
+          console.log('🔊🎵 音频播放成功启动');
+          setIsPlaying(true);
+        }).catch((e: any) => {
+          console.error('🔊❌ 音频自动播放失败:', e);
+        });
+        
+      } catch (error) {
+        console.error('🔊❌ 音频track处理失败:', error);
+      }
     }
   };
 
@@ -181,10 +362,34 @@ export default function PrymeUI() {
 
   // 处理数据消息
   const handleDataReceived = (e: any) => {
-    const decoder = new TextDecoder();
-    const message = decoder.decode(e.payload);
-    console.log('收到翻译数据:', message);
-    setSubtitle(message);
+    try {
+      const decoder = new TextDecoder();
+      const message = decoder.decode(e.payload);
+      console.log('📨 收到数据消息:', {
+        sender: e.participant?.identity,
+        messageLength: message.length,
+        message: message.substring(0, 100) + (message.length > 100 ? '...' : '')
+      });
+      
+      // 尝试解析JSON
+      try {
+        const jsonData = JSON.parse(message);
+        console.log('📋 解析JSON数据:', jsonData);
+        
+        if (jsonData.type === 'translation' || jsonData.type === 'transcript') {
+          setSubtitle(jsonData.text || jsonData.content || message);
+          console.log('📺 更新字幕:', jsonData.text || jsonData.content);
+        } else {
+          setSubtitle(message);
+        }
+      } catch (parseError) {
+        // 如果不是JSON，直接作为纯文本处理
+        console.log('📝 纯文本消息:', message);
+        setSubtitle(message);
+      }
+    } catch (error) {
+      console.error('❌ 处理数据消息失败:', error);
+    }
   };
 
   // 断开连接
@@ -731,13 +936,20 @@ export default function PrymeUI() {
                     adaptiveStream: true,
                     dynacast: true,
                   }}
-                  onConnected={() => handleRoomConnected}
+                  onConnected={handleRoomConnected}
                   onDisconnected={() => {
-                    console.log('已断开LiveKit房间连接');
+                    console.log('🔌 已断开LiveKit房间连接');
                     setIsConnected(false);
                     setAgentParticipant(null);
                   }}
                 >
+                  <LiveKitRoomComponents 
+                    roomRef={roomRef}
+                    setIsConnected={setIsConnected}
+                    setAgentParticipant={setAgentParticipant}
+                    handleParticipantConnected={handleParticipantConnected}
+                    handleDataReceived={handleDataReceived}
+                  />
                   {/* Microphone Toggle in Top Right Corner */}
                   <div style={{
                     position: 'fixed',
@@ -769,6 +981,14 @@ export default function PrymeUI() {
                       />
                     </div>
                   </div>
+                                      {/* 自动播放房间内所有音频轨道 */}
+                    <RoomAudioRenderer />
+                    {/* 添加调试信息显示 */}
+                    <div style={{ position: 'fixed', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', borderRadius: '8px', fontSize: '12px', zIndex: 1000 }}>
+                      <div>🔗 连接状态: {isConnected ? '已连接' : '未连接'}</div>
+                      <div>🤖 Agent: {agentParticipant ? agentParticipant.identity : '未找到'}</div>
+                      <div>📺 字幕: {subtitle ? '有内容' : '无内容'}</div>
+                    </div>
                 </LiveKitRoom>
               )}
             </div>
