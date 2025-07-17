@@ -1,6 +1,7 @@
 // vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "path";
 
 export default defineConfig({
   plugins: [react()],
@@ -16,5 +17,20 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1000, // 增加警告阈值到1000kB
-  }
+    outDir: "dist",
+    emptyOutDir: true,
+    assetsDir: "assets",
+    // 确保生成正确的资源URL
+    assetsInlineLimit: 4096,
+    // 生成sourcemap以便调试
+    sourcemap: true,
+  },
+  // 确保正确解析路径别名
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "./src"),
+    },
+  },
+  // 确保正确处理静态资源
+  publicDir: "public",
 });
