@@ -284,17 +284,13 @@ export default function PrymeUI() {
           }}></div>
         </div>
         
-        {/* Connection Status and Microphone Controls */}
+        {/* Connection Status */}
         <div style={{
           position: 'absolute',
           top: '24px',
           left: '24px',
-          zIndex: 10,
-          display: 'flex',
-          gap: '12px',
-          alignItems: 'center'
+          zIndex: 10
         }}>
-          {/* Connection Status */}
           <div style={{
             padding: '12px 24px',
             background: 'rgba(255, 255, 255, 0.2)',
@@ -317,33 +313,6 @@ export default function PrymeUI() {
             }}></div>
             <span>{isConnected ? 'LiveKit 已连接' : '未连接'}</span>
           </div>
-
-          {/* LiveKit Microphone Toggle - Only show when connected */}
-          {isConnected && (
-            <div style={{
-              padding: '8px',
-              background: 'rgba(255, 255, 255, 0.2)',
-              backdropFilter: 'blur(12px)',
-              borderRadius: '50%',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
-            }}>
-              <TrackToggle 
-                source={Track.Source.Microphone}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'white',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              />
-            </div>
-          )}
         </div>
         
         {/* Header with Logo */}
@@ -670,41 +639,7 @@ export default function PrymeUI() {
                   textAlign: 'center'
                 }}>翻译控制区域</h2>
 
-                {/* LiveKit Audio Controls */}
-                {isConnected && (
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    gap: '16px',
-                    marginBottom: '24px'
-                  }}>
-                    {/* Microphone Toggle with Custom Styling */}
-                    <div style={{
-                      padding: '12px 24px',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      color: 'rgba(255, 255, 255, 0.9)'
-                    }}>
-                      <Mic style={{ width: '16px', height: '16px' }} />
-                      <span style={{ fontSize: '14px', marginRight: '8px' }}>麦克风:</span>
-                      <TrackToggle 
-                        source={Track.Source.Microphone}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.2)',
-                          border: '1px solid rgba(255, 255, 255, 0.3)',
-                          color: 'white',
-                          borderRadius: '6px',
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          cursor: 'pointer'
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
+
 
                 <div style={{
                   display: 'flex',
@@ -775,7 +710,39 @@ export default function PrymeUI() {
                     setIsConnected(false);
                     setAgentParticipant(null);
                   }}
-                />
+                >
+                  {/* Microphone Toggle in Top Right Corner */}
+                  <div style={{
+                    position: 'fixed',
+                    top: '24px',
+                    right: '24px',
+                    zIndex: 1000
+                  }}>
+                    <div style={{
+                      padding: '12px',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      backdropFilter: 'blur(12px)',
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <TrackToggle 
+                        source={Track.Source.Microphone}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'white',
+                          cursor: 'pointer',
+                          width: '24px',
+                          height: '24px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                      />
+                    </div>
+                  </div>
+                </LiveKitRoom>
               )}
             </div>
           )}
