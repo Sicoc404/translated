@@ -4,6 +4,7 @@
 """
 LiveKit Agents 多语言实时翻译广播系统 - 主入口
 使用LiveKit Agents 1.1.7的标准工作流程
+同时提供Token服务器功能
 """
 
 import os
@@ -21,6 +22,12 @@ from livekit.agents import (
     RunContext
 )
 from agent_config import create_translation_agent, LANGUAGE_CONFIG
+
+# Token服务器相关导入
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from livekit import api
+import threading
 
 # 加载环境变量
 load_dotenv()
@@ -40,6 +47,74 @@ ROOM_LANGUAGE_MAP = {
     "Pryme-Vietnamese": "vi",
     "Pryme-Malay": "ms"
 }
+
+# Token服务器配置
+app = Flask(__name__)
+CORS(app)
+
+LIVEKIT_API_KEY = os.getenv('LIVEKIT_API_KEY')
+LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET')
+LIVEKIT_URL = os.getenv('LIVEKIT_URL')
+
+@app.route('/api/token', methods=['POST'])
+def get_token():
+    """生成LiveKit房间访问token"""
+    try:
+        data = request.get_json()
+        room_name = data.get('room')
+        identity = data.get('identity', f'user-{os.urandom(4).hex()}')
+        
+        if not room_name:
+            return jsonify({'error': '缺少房间名称'}), 400
+        
+        logger.info(f"为用户 {identity} 生成房间 {room_name} 的token")
+        
+        # 创建AccessToken
+        token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
+            .with_identity(identity) \
+            .with_name(identity) \
+            .with_grants(api.VideoGrants(
+                room_join=True,
+                room=room_name,
+                can_publish=True,
+                can_publish_data=True,
+                can_subscribe=True
+            ))
+        
+        jwt_token = token.to_jwt()
+        
+        return jsonify({
+            'token': jwt_token,
+            'room': room_name,
+            'identity': identity,
+            'livekit_url': LIVEKIT_URL
+        })
+        
+    except Exception as e:
+        logger.error(f"生成token失败: {e}")
+        return jsonify({'error': f'生成token失败: {str(e)}'}), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """健康检查接口"""
+    return jsonify({'status': 'ok', 'service': 'livekit-translation-system'})
+
+@app.route('/', methods=['GET'])
+def root():
+    """根路径"""
+    return jsonify({
+        'message': 'LiveKit Translation System',
+        'services': ['agent', 'token-server'],
+        'endpoints': {
+            'token': '/api/token (POST)',
+            'health': '/health (GET)'
+        }
+    })
+
+def start_flask_server():
+    """在单独线程中启动Flask服务器"""
+    port = int(os.getenv('PORT', 8000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 async def entrypoint(ctx: JobContext):
     """
@@ -137,6 +212,12 @@ def main():
     logger.info("LiveKit 多语言翻译代理启动中...")
     logger.info(f"支持的语言: {', '.join([f'{code}({info['name']})' for code, info in LANGUAGE_CONFIG.items()])}")
     logger.info(f"支持的房间: {', '.join(ROOM_LANGUAGE_MAP.keys())}")
+    
+    # 在生产环境中启动Flask服务器
+    if len(sys.argv) > 1 and sys.argv[1] == 'start':
+        logger.info("启动Token服务器...")
+        flask_thread = threading.Thread(target=start_flask_server, daemon=True)
+        flask_thread.start()
     
     # 配置Worker选项
     opts = WorkerOptions(
