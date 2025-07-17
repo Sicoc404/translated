@@ -21,7 +21,7 @@ from livekit.agents import (
     JobProcess,
     RunContext
 )
-from agent_config import create_translation_agent, LANGUAGE_CONFIG
+from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
 # Token服务器相关导入
 from flask import Flask, request, jsonify
@@ -147,23 +147,27 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"🌍 为房间 '{room_name}' 启动 {language_name} 翻译代理...")
     
     try:
+        # 创建翻译组件
+        vad, stt, llm, tts = create_translation_components(target_language)
+        logger.info(f"🤖 {language_name} 组件创建成功")
+        
         # 创建翻译Agent
         agent = create_translation_agent(target_language)
         logger.info(f"🤖 {language_name} Agent创建成功")
         
         # 创建AgentSession并配置组件
         session = AgentSession(
-            vad=agent.vad,
-            stt=agent.stt,
-            llm=agent.llm,
-            tts=agent.tts,
+            vad=vad,
+            stt=stt,
+            llm=llm,
+            tts=tts,
         )
         
         logger.info(f"📝 组件配置:")
-        logger.info(f"  VAD: {type(agent.vad).__name__}")
-        logger.info(f"  STT: {type(agent.stt).__name__} (模型: nova-2-zh)")
-        logger.info(f"  LLM: {type(agent.llm).__name__} (模型: llama3-8b-8192)")
-        logger.info(f"  TTS: {type(agent.tts).__name__} (语言: {target_language})")
+        logger.info(f"  VAD: {type(vad).__name__}")
+        logger.info(f"  STT: {type(stt).__name__} (模型: nova-2-zh)")
+        logger.info(f"  LLM: {type(llm).__name__} (模型: llama3-8b-8192)")
+        logger.info(f"  TTS: {type(tts).__name__} (语言: {target_language})")
         
         logger.info(f"🚀 启动 {language_name} 翻译代理...")
         
