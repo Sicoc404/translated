@@ -7,6 +7,7 @@ export default function PrymeUI() {
   // 状态变量
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [token, setToken] = useState('');
+  const [liveKitUrl, setLiveKitUrl] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [subtitle, setSubtitle] = useState('');
@@ -30,14 +31,40 @@ export default function PrymeUI() {
   const joinRoom = async (language: any) => {
     try {
       const roomName = language.roomName;
-      // 模拟token获取，实际应该调用后端API
-      const mockToken = `mock-token-${roomName}-${Date.now()}`;
-      setToken(mockToken);
+      const identity = `listener-${Date.now()}`;
+      
+      console.log(`正在获取房间 ${roomName} 的token...`);
+      
+      // 调用后端API获取token
+      const response = await fetch('https://translated-backed.onrender.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          room: roomName,
+          identity: identity
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      console.log('成功获取token:', data);
+      setToken(data.token);
+      setLiveKitUrl(data.livekit_url);
       setSelectedRoom(language);
-      console.log(`正在加入房间: ${roomName}`);
+      
     } catch (error) {
       console.error('获取房间token失败:', error);
-      alert('连接房间失败，请稍后重试');
+      alert(`连接房间失败: ${error.message}。请检查后端服务是否正常运行。`);
     }
   };
   
@@ -699,12 +726,12 @@ export default function PrymeUI() {
               {token && (
                 <LiveKitRoom
                   token={token}
-                  serverUrl={process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
+                  serverUrl={liveKitUrl || 'wss://your-livekit-url.livekit.cloud'}
                   options={{
                     adaptiveStream: true,
                     dynacast: true,
                   }}
-                  onConnected={handleRoomConnected}
+                  onConnected={() => handleRoomConnected}
                   onDisconnected={() => {
                     console.log('已断开LiveKit房间连接');
                     setIsConnected(false);
