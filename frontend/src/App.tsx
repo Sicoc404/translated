@@ -350,7 +350,7 @@ export default function PrymeUI() {
             {token && (
               <LiveKitRoom
                 token={token}
-                serverUrl={process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
+                serverUrl={process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
                 options={{
                   adaptiveStream: true,
                   dynacast: true,
