@@ -9,7 +9,7 @@ LiveKit Agent配置 - 构建多语言翻译代理
 import logging
 from livekit.agents import Agent, AgentSession
 from livekit.plugins import deepgram, groq, cartesia, silero
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 # 配置日志
 logger = logging.getLogger("agent-config")
@@ -73,15 +73,15 @@ def get_translation_instructions(language: str) -> str:
 
 请始终用{language_name}回应，提供准确且自然的翻译。"""
 
-def create_translation_agent(language: str) -> Agent:
+def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
     """
-    为指定语言创建翻译Agent
+    为指定语言创建翻译组件
     
     Args:
         language: 目标语言代码
         
     Returns:
-        配置好的Agent实例
+        (vad, stt, llm, tts) 组件元组
     """
     if language not in LANGUAGE_CONFIG:
         raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
@@ -89,18 +89,12 @@ def create_translation_agent(language: str) -> Agent:
     language_info = LANGUAGE_CONFIG[language]
     language_name = language_info["name"]
     
-    logger.info(f"🔧 开始创建 {language_name} 翻译Agent...")
-    
-    # 创建Agent，使用1.1.7的标准架构
-    agent = Agent(
-        instructions=get_translation_instructions(language)
-    )
-    logger.info(f"✅ Agent基础框架创建成功")
+    logger.info(f"🔧 开始创建 {language_name} 翻译组件...")
     
     # VAD组件 - 语音活动检测
     try:
         logger.info(f"🎤 初始化VAD (Silero)...")
-        agent.vad = silero.VAD.load()
+        vad = silero.VAD.load()
         logger.info(f"✅ VAD初始化成功")
     except Exception as e:
         logger.error(f"❌ VAD初始化失败: {e}")
@@ -109,7 +103,7 @@ def create_translation_agent(language: str) -> Agent:
     # STT配置 - 设置为源语言（中文）
     try:
         logger.info(f"🗣️ 初始化STT (Deepgram nova-2-zh)...")
-        agent.stt = deepgram.STT(
+        stt = deepgram.STT(
             model="nova-2-zh",  # 中文模型
             language="zh",
         )
@@ -121,7 +115,7 @@ def create_translation_agent(language: str) -> Agent:
     # LLM配置 - 使用Groq的Llama3进行翻译
     try:
         logger.info(f"🧠 初始化LLM (Groq Llama3-8b-8192)...")
-        agent.llm = groq.LLM(
+        llm = groq.LLM(
             model="llama3-8b-8192",
         )
         logger.info(f"✅ LLM初始化成功 - 模型: llama3-8b-8192")
@@ -132,7 +126,7 @@ def create_translation_agent(language: str) -> Agent:
     # TTS配置 - 设置为目标语言
     try:
         logger.info(f"🔊 初始化TTS (Cartesia {language_name})...")
-        agent.tts = cartesia.TTS(
+        tts = cartesia.TTS(
             model="sonic-multilingual",  # 使用多语言模型
             voice=language_info["voice_id"],
         )
@@ -141,5 +135,29 @@ def create_translation_agent(language: str) -> Agent:
         logger.error(f"❌ TTS初始化失败: {e}")
         raise
     
-    logger.info(f"🎉 {language_name} 翻译Agent创建完成!")
+    logger.info(f"🎉 {language_name} 翻译组件创建完成!")
+    return vad, stt, llm, tts
+
+def create_translation_agent(language: str) -> Agent:
+    """
+    为指定语言创建翻译Agent（仅包含指令）
+    
+    Args:
+        language: 目标语言代码
+        
+    Returns:
+        配置好的Agent实例
+    """
+    if language not in LANGUAGE_CONFIG:
+        raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
+    
+    language_name = LANGUAGE_CONFIG[language]["name"]
+    logger.info(f"🤖 创建 {language_name} Agent框架...")
+    
+    # 创建Agent，只包含指令，不设置组件
+    agent = Agent(
+        instructions=get_translation_instructions(language)
+    )
+    
+    logger.info(f"✅ {language_name} Agent框架创建成功")
     return agent 
