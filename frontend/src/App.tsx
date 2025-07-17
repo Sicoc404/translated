@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Volume2, Mic, Settings, ArrowLeft } from 'lucide-react';
-import { LiveKitRoom } from '@livekit/components-react';
+import { LiveKitRoom, TrackToggle, useConnectionState, useRoomInfo } from '@livekit/components-react';
 import { Room, RoomOptions, RemoteTrack, DataPacket_Kind, ConnectionState, RoomEvent, RemoteParticipant, RemoteTrackPublication, Track } from 'livekit-client';
 
 export default function PrymeUI() {
@@ -284,13 +284,17 @@ export default function PrymeUI() {
           }}></div>
         </div>
         
-        {/* Connection Status Indicator */}
+        {/* Connection Status and Microphone Controls */}
         <div style={{
           position: 'absolute',
           top: '24px',
           left: '24px',
-          zIndex: 10
+          zIndex: 10,
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'center'
         }}>
+          {/* Connection Status */}
           <div style={{
             padding: '12px 24px',
             background: 'rgba(255, 255, 255, 0.2)',
@@ -313,6 +317,33 @@ export default function PrymeUI() {
             }}></div>
             <span>{isConnected ? 'LiveKit 已连接' : '未连接'}</span>
           </div>
+
+          {/* LiveKit Microphone Toggle - Only show when connected */}
+          {isConnected && (
+            <div style={{
+              padding: '8px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              backdropFilter: 'blur(12px)',
+              borderRadius: '50%',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)'
+            }}>
+              <TrackToggle 
+                source={Track.Source.Microphone}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'white',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              />
+            </div>
+          )}
         </div>
         
         {/* Header with Logo */}
@@ -638,6 +669,43 @@ export default function PrymeUI() {
                   marginBottom: '24px',
                   textAlign: 'center'
                 }}>翻译控制区域</h2>
+
+                {/* LiveKit Audio Controls */}
+                {isConnected && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: '16px',
+                    marginBottom: '24px'
+                  }}>
+                    {/* Microphone Toggle with Custom Styling */}
+                    <div style={{
+                      padding: '12px 24px',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      color: 'rgba(255, 255, 255, 0.9)'
+                    }}>
+                      <Mic style={{ width: '16px', height: '16px' }} />
+                      <span style={{ fontSize: '14px', marginRight: '8px' }}>麦克风:</span>
+                      <TrackToggle 
+                        source={Track.Source.Microphone}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.2)',
+                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          color: 'white',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '12px',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -668,7 +736,7 @@ export default function PrymeUI() {
                       opacity: (!isConnected || !agentParticipant) ? 0.5 : 1
                     }}
                   >
-                    <Mic style={{ width: '20px', height: '20px' }} />
+                    <Settings style={{ width: '20px', height: '20px' }} />
                     <span>{isTranslating ? '停止实时翻译' : '启动实时翻译'}</span>
                   </button>
                   
