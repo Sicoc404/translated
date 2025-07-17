@@ -6,9 +6,13 @@ LiveKit Agent配置 - 构建多语言翻译代理
 符合LiveKit Agents 1.1.7 API规范
 """
 
+import logging
 from livekit.agents import Agent, AgentSession
 from livekit.plugins import deepgram, groq, cartesia, silero
 from typing import Dict, Any
+
+# 配置日志
+logger = logging.getLogger("agent-config")
 
 # 语言配置
 LANGUAGE_CONFIG = {
@@ -83,30 +87,59 @@ def create_translation_agent(language: str) -> Agent:
         raise ValueError(f"不支持的语言代码: {language}，支持的语言: {list(LANGUAGE_CONFIG.keys())}")
     
     language_info = LANGUAGE_CONFIG[language]
+    language_name = language_info["name"]
+    
+    logger.info(f"🔧 开始创建 {language_name} 翻译Agent...")
     
     # 创建Agent，使用1.1.7的标准架构
     agent = Agent(
         instructions=get_translation_instructions(language)
     )
+    logger.info(f"✅ Agent基础框架创建成功")
     
-    # 为Agent配置组件属性，用于AgentSession
-    agent.vad = silero.VAD.load()
+    # VAD组件 - 语音活动检测
+    try:
+        logger.info(f"🎤 初始化VAD (Silero)...")
+        agent.vad = silero.VAD.load()
+        logger.info(f"✅ VAD初始化成功")
+    except Exception as e:
+        logger.error(f"❌ VAD初始化失败: {e}")
+        raise
     
     # STT配置 - 设置为源语言（中文）
-    agent.stt = deepgram.STT(
-        model="nova-2-zh",  # 中文模型
-        language="zh",
-    )
+    try:
+        logger.info(f"🗣️ 初始化STT (Deepgram nova-2-zh)...")
+        agent.stt = deepgram.STT(
+            model="nova-2-zh",  # 中文模型
+            language="zh",
+        )
+        logger.info(f"✅ STT初始化成功 - 模型: nova-2-zh, 语言: zh")
+    except Exception as e:
+        logger.error(f"❌ STT初始化失败: {e}")
+        raise
     
     # LLM配置 - 使用Groq的Llama3进行翻译
-    agent.llm = groq.LLM(
-        model="llama3-8b-8192",
-    )
+    try:
+        logger.info(f"🧠 初始化LLM (Groq Llama3-8b-8192)...")
+        agent.llm = groq.LLM(
+            model="llama3-8b-8192",
+        )
+        logger.info(f"✅ LLM初始化成功 - 模型: llama3-8b-8192")
+    except Exception as e:
+        logger.error(f"❌ LLM初始化失败: {e}")
+        raise
     
     # TTS配置 - 设置为目标语言
-    agent.tts = cartesia.TTS(
-        model="sonic-multilingual",  # 使用多语言模型
-        voice=language_info["voice_id"],
-    )
+    try:
+        logger.info(f"🔊 初始化TTS (Cartesia {language_name})...")
+        agent.tts = cartesia.TTS(
+            model="sonic-multilingual",  # 使用多语言模型
+            voice=language_info["voice_id"],
+        )
+        logger.info(f"✅ TTS初始化成功 - 模型: sonic-multilingual, 语音ID: {language_info['voice_id']}")
+    except Exception as e:
+        logger.error(f"❌ TTS初始化失败: {e}")
+        raise
     
+    logger.info(f"🎉 {language_name} 翻译Agent创建完成!")
     return agent 
