@@ -8,7 +8,7 @@ LiveKit Agent配置 - 构建多语言翻译代理
 
 import os
 import logging
-from livekit.agents import Agent, AgentSession, llm
+from livekit.agents import Agent, llm
 from livekit.plugins import deepgram, cartesia, silero
 from typing import Dict, Any, Tuple, AsyncIterator
 from groq import Groq
@@ -46,6 +46,7 @@ SOURCE_LANGUAGE = "zh"  # 中文
 class CustomGroqLLM(llm.LLM):
     """
     自定义Groq LLM实现，使用官方groq客户端
+    符合LiveKit Agents 1.1.7标准（无FunctionContext）
     """
     
     def __init__(self, model: str = "llama3-8b-8192"):
@@ -58,12 +59,12 @@ class CustomGroqLLM(llm.LLM):
         self,
         *,
         chat_ctx: llm.ChatContext,
-        fnc_ctx: llm.FunctionContext | None = None,
         temperature: float | None = None,
         n: int | None = None,
     ) -> "llm.LLMStream":
         """
         发送聊天请求到Groq
+        注意：LiveKit 1.1.7不再使用FunctionContext参数
         """
         return CustomGroqLLMStream(
             client=self._client,
@@ -75,6 +76,7 @@ class CustomGroqLLM(llm.LLM):
 class CustomGroqLLMStream(llm.LLMStream):
     """
     自定义Groq LLM流实现
+    符合LiveKit Agents 1.1.7标准
     """
     
     def __init__(
@@ -84,7 +86,7 @@ class CustomGroqLLMStream(llm.LLMStream):
         chat_ctx: llm.ChatContext,
         temperature: float,
     ):
-        super().__init__(chat_ctx=chat_ctx, fnc_ctx=None)
+        super().__init__(chat_ctx=chat_ctx)  # 移除fnc_ctx参数
         self._client = client
         self._model = model
         self._temperature = temperature
@@ -104,7 +106,8 @@ class CustomGroqLLMStream(llm.LLMStream):
                     })
             
             logger.info(f"🧠 发送请求到Groq: {len(messages)} 条消息")
-            logger.info(f"🧠 用户输入: '{messages[-1]['content'][:100]}...'")
+            if messages:
+                logger.info(f"🧠 用户输入: '{messages[-1]['content'][:100]}...'")
             
             # 调用官方Groq客户端
             response = self._client.chat.completions.create(
@@ -112,6 +115,7 @@ class CustomGroqLLMStream(llm.LLMStream):
                 messages=messages,
                 temperature=self._temperature,
                 max_tokens=1000,
+                stream=False,  # 先使用非流式
             )
             
             # 获取回复内容
@@ -124,14 +128,22 @@ class CustomGroqLLMStream(llm.LLMStream):
                 role="assistant"
             )
             
-            self._event_ch.send_nowait(llm.LLMEvent(type="content_part_added", content_part=reply_msg))
-            self._event_ch.send_nowait(llm.LLMEvent(type="content_done"))
+            # 按照LiveKit 1.1.7标准发送事件
+            self._event_ch.send_nowait(
+                llm.LLMEvent(type="content_part_added", content_part=reply_msg)
+            )
+            self._event_ch.send_nowait(
+                llm.LLMEvent(type="content_done")
+            )
             
         except Exception as e:
             logger.error(f"❌ Groq LLM处理失败: {e}")
             import traceback
             logger.error(f"错误详情:\n{traceback.format_exc()}")
-            raise
+            # 发送错误事件
+            self._event_ch.send_nowait(
+                llm.LLMEvent(type="error", error=str(e))
+            )
 
 def get_translation_instructions(language: str) -> str:
     """
