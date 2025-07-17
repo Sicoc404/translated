@@ -11,8 +11,16 @@ import sys
 import asyncio
 import logging
 from dotenv import load_dotenv
-from livekit.agents import JobContext, WorkerOptions, cli, JobProcess
-from agent_config import create_agent_session_for_language, LANGUAGE_CONFIG
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext, 
+    WorkerOptions, 
+    cli, 
+    JobProcess,
+    RunContext
+)
+from agent_config import create_translation_agent, LANGUAGE_CONFIG
 
 # 加载环境变量
 load_dotenv()
@@ -63,19 +71,33 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"为房间 '{room_name}' 启动 {language_name} 翻译代理...")
     
     try:
-        # 在JobContext内部创建Agent
-        agent = await create_agent_session_for_language(ctx, target_language)
+        # 创建翻译Agent
+        agent = create_translation_agent(target_language)
         
-        # 启动Agent
-        agent.start(ctx.room)
+        # 创建AgentSession并配置组件
+        session = AgentSession(
+            vad=agent.vad,
+            stt=agent.stt,
+            llm=agent.llm,
+            tts=agent.tts,
+        )
         
-        logger.info(f"{language_name} 翻译代理已成功启动")
+        logger.info(f"启动 {language_name} 翻译代理...")
         
-        # 可选：发送初始消息
-        await agent.say(f"你好！我是 {language_name} 翻译助手，我会将中文实时翻译成 {language_name}。")
+        # 启动session - 根据1.1.7 API
+        await session.start(agent=agent, room=ctx.room)
         
-        # 保持连接直到代理关闭
-        await agent.aclose()
+        logger.info(f"{language_name} 翻译代理已成功启动并连接到房间")
+        
+        # 发送欢迎消息
+        await session.generate_reply(
+            instructions=f"简短地用{language_name}向用户问好，告诉他们你是{language_name}实时翻译助手。"
+        )
+        
+        logger.info(f"{language_name} 翻译代理正在运行，等待语音输入...")
+        
+        # 保持运行状态，等待session完成
+        # 注意：在1.1.7中，session会自动处理音频流和翻译
         
     except Exception as e:
         logger.error(f"启动 {language_name} 翻译代理时出错: {e}")
@@ -119,7 +141,7 @@ def main():
     # 配置Worker选项
     opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
-        prewarm_fnc=prewarm,
+        prewarm_fnc=prewarm,  # 使用正确的参数名
         num_idle_processes=1,  # 控制空闲进程数量
     )
     
