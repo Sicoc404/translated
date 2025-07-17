@@ -10,8 +10,8 @@ export default function PrymeUI() {
   const [isConnected, setIsConnected] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [subtitle, setSubtitle] = useState('');
-  const [volume, setVolume] = useState(0.8); // 音量控制，范围0-1
-  const [isPlaying, setIsPlaying] = useState(true); // 音频播放状态
+  const [volume, setVolume] = useState(0.8);
+  const [isPlaying, setIsPlaying] = useState(true);
   const [agentParticipant, setAgentParticipant] = useState<any>(null);
   
   // 引用
@@ -52,7 +52,6 @@ export default function PrymeUI() {
       const room = roomRef.current;
       
       if (!isTranslating) {
-        // 开始翻译
         console.log('调用RPC: start_translation');
         const result = await room.localParticipant.rpc(
           agentParticipant.identity, 
@@ -61,7 +60,6 @@ export default function PrymeUI() {
         console.log('RPC结果:', result);
         setIsTranslating(true);
       } else {
-        // 停止翻译
         console.log('调用RPC: stop_translation');
         const result = await room.localParticipant.rpc(
           agentParticipant.identity, 
@@ -102,18 +100,14 @@ export default function PrymeUI() {
     roomRef.current = room;
     setIsConnected(true);
     
-    // 监听参与者加入
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
-    
-    // 检查已有参与者
     room.participants.forEach(participant => {
       handleParticipantConnected(participant);
     });
     
-    // 监听连接状态变化
     room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
       console.log('房间连接状态变化:', state);
-      if (state === ConnectionState.Disconnected || state === ConnectionState.Failed) {
+      if (state === ConnectionState.Disconnected) {
         setIsConnected(false);
         setAgentParticipant(null);
       }
@@ -124,16 +118,13 @@ export default function PrymeUI() {
   const handleParticipantConnected = (participant: any) => {
     console.log('参与者加入:', participant.identity);
     
-    // 检查是否是翻译代理
     if (participant.identity.includes('translator')) {
       console.log('找到翻译代理:', participant.identity);
       setAgentParticipant(participant);
       
-      // 订阅参与者的轨道
       participant.on('trackSubscribed', handleTrackSubscribed);
       participant.on('trackUnsubscribed', handleTrackUnsubscribed);
       
-      // 检查已有轨道
       participant.tracks.forEach(publication => {
         if (publication.track) {
           handleTrackSubscribed(publication.track, publication);
@@ -183,194 +174,558 @@ export default function PrymeUI() {
     setIsTranslating(false);
   };
 
+  // 样式定义
+  const containerStyle: React.CSSProperties = {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #581c87 0%, #6d28d9 50%, #5b21b6 100%)',
+    display: 'flex',
+    flexDirection: 'column',
+    position: 'relative',
+    overflow: 'hidden'
+  };
+
+  const backgroundOverlay1: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(to top, rgba(88, 28, 135, 0.5), transparent, rgba(109, 40, 217, 0.3))',
+    zIndex: 1
+  };
+
+  const backgroundOverlay2: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(to bottom left, rgba(30, 58, 138, 0.2), transparent, rgba(131, 24, 67, 0.2))',
+    zIndex: 1
+  };
+
+  const backgroundOverlay3: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    background: 'linear-gradient(to right, transparent, rgba(139, 92, 246, 0.1), transparent)',
+    zIndex: 1
+  };
+
+  const animatedBgContainer: React.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    opacity: 0.2,
+    zIndex: 2
+  };
+
+  const pulseAnimation = `
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes ping {
+      75%, 100% {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+  `;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-purple-700 flex flex-col relative overflow-hidden">
-      {/* Multi-layer Background */}
-      <div className="absolute inset-0 bg-gradient-to-t from-purple-900/50 via-transparent to-purple-600/30"></div>
-      <div className="absolute inset-0 bg-gradient-to-bl from-blue-900/20 via-transparent to-pink-900/20"></div>
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/10 to-transparent"></div>
-      
-      {/* Animated Background Layers */}
-      <div className="absolute inset-0 opacity-20">
-        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-purple-400/30 via-transparent to-transparent animate-pulse"></div>
-        <div className="absolute top-20 left-20 w-64 h-64 bg-gradient-to-r from-blue-400/20 via-purple-400/10 to-transparent rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute top-60 right-40 w-80 h-80 bg-gradient-to-r from-pink-400/20 via-purple-400/10 to-transparent rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-40 left-60 w-48 h-48 bg-gradient-to-r from-indigo-400/20 via-purple-400/10 to-transparent rounded-full blur-2xl animate-pulse"></div>
-      </div>
-      
-      {/* Connection Status Indicator */}
-      <div className="absolute top-6 left-6 z-10">
-        <div className={`px-6 py-3 bg-white/20 backdrop-blur-md text-white rounded-full font-semibold shadow-lg flex items-center space-x-2 border border-white/20`}>
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-          <span>{isConnected ? 'LiveKit 已连接' : '未连接'}</span>
+    <>
+      <style>{pulseAnimation}</style>
+      <div style={containerStyle}>
+        {/* Multi-layer Background */}
+        <div style={backgroundOverlay1}></div>
+        <div style={backgroundOverlay2}></div>
+        <div style={backgroundOverlay3}></div>
+        
+        {/* Animated Background Layers */}
+        <div style={animatedBgContainer}>
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(to right, rgba(139, 92, 246, 0.3), transparent, transparent)',
+            animation: 'pulse 2s infinite'
+          }}></div>
+          <div style={{
+            position: 'absolute',
+            top: '80px',
+            left: '80px',
+            width: '256px',
+            height: '256px',
+            background: 'linear-gradient(to right, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.1), transparent)',
+            borderRadius: '50%',
+            filter: 'blur(64px)',
+            animation: 'pulse 4s infinite'
+          }}></div>
+          <div style={{
+            position: 'absolute',
+            top: '240px',
+            right: '160px',
+            width: '320px',
+            height: '320px',
+            background: 'linear-gradient(to right, rgba(236, 72, 153, 0.2), rgba(139, 92, 246, 0.1), transparent)',
+            borderRadius: '50%',
+            filter: 'blur(64px)',
+            animation: 'pulse 6s infinite'
+          }}></div>
+          <div style={{
+            position: 'absolute',
+            bottom: '160px',
+            left: '240px',
+            width: '192px',
+            height: '192px',
+            background: 'linear-gradient(to right, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1), transparent)',
+            borderRadius: '50%',
+            filter: 'blur(40px)',
+            animation: 'pulse 3s infinite'
+          }}></div>
         </div>
-      </div>
-      
-      {/* Header with Logo */}
-      <header className="flex justify-center items-center pt-8 pb-6 relative z-10">
-        <div className="relative">
-          {/* Animated Golden Ring */}
-          <div className="absolute inset-0 rounded-full border-4 border-yellow-400 animate-pulse shadow-lg shadow-yellow-400/50"></div>
-          <div className="absolute inset-0 rounded-full border-2 border-yellow-300 animate-spin"></div>
-          
-          {/* Logo Text */}
-          <div className="relative px-12 py-6 bg-gradient-to-r from-purple-800 to-purple-900 rounded-full shadow-2xl">
-            <h1 className="text-4xl md:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-200 to-white animate-pulse">
-              Pryme+
-            </h1>
-            {/* Sparkle Effect */}
-            <div className="absolute top-2 right-4 w-2 h-2 bg-yellow-400 rounded-full animate-ping"></div>
-            <div className="absolute bottom-3 left-6 w-1 h-1 bg-yellow-300 rounded-full animate-ping"></div>
+        
+        {/* Connection Status Indicator */}
+        <div style={{
+          position: 'absolute',
+          top: '24px',
+          left: '24px',
+          zIndex: 10
+        }}>
+          <div style={{
+            padding: '12px 24px',
+            background: 'rgba(255, 255, 255, 0.2)',
+            backdropFilter: 'blur(12px)',
+            color: 'white',
+            borderRadius: '9999px',
+            fontWeight: '600',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: isConnected ? '#4ade80' : '#f87171',
+              animation: isConnected ? 'pulse 2s infinite' : 'none'
+            }}></div>
+            <span>{isConnected ? 'LiveKit 已连接' : '未连接'}</span>
           </div>
         </div>
-      </header>
-
-      {/* Main Content Container */}
-      <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-8 relative z-10">
-        {!selectedRoom ? (
-          /* Language Room Selection */
-          <section className="mb-12">
-            <h2 className="text-xl font-semibold text-white/90 mb-6 text-center">语言房间选择</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
-              {languages.map((item, index) => (
-                <div 
-                  key={index} 
-                  onClick={() => joinRoom(item)}
-                  className="relative z-10 bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer hover:scale-105 border-2 border-gray-100 hover:border-purple-200"
-                >
-                  <div className="text-center">
-                    <div className="text-3xl mb-2">{item.flag}</div>
-                    <div className="text-lg font-medium text-gray-800">{item.name}</div>
-                    <div className="text-sm text-gray-500 mt-1">{item.lang}</div>
-                  </div>
-                </div>
-              ))}
+        
+        {/* Header with Logo */}
+        <header style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          paddingTop: '32px',
+          paddingBottom: '24px',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          <div style={{ position: 'relative' }}>
+            {/* Animated Golden Ring */}
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: '4px solid #fbbf24',
+              animation: 'pulse 2s infinite',
+              boxShadow: '0 10px 25px rgba(251, 191, 36, 0.5)'
+            }}></div>
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              border: '2px solid #fde047',
+              animation: 'spin 10s linear infinite'
+            }}></div>
+            
+            {/* Logo Text */}
+            <div style={{
+              position: 'relative',
+              padding: '24px 48px',
+              background: 'linear-gradient(to right, #6b21a8, #581c87)',
+              borderRadius: '50%',
+              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.25)'
+            }}>
+              <h1 style={{
+                fontSize: '4rem',
+                fontWeight: 'bold',
+                background: 'linear-gradient(to right, #e9d5ff, #ffffff)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+                animation: 'pulse 2s infinite',
+                margin: 0
+              }}>
+                Pryme+
+              </h1>
+              {/* Sparkle Effect */}
+              <div style={{
+                position: 'absolute',
+                top: '8px',
+                right: '16px',
+                width: '8px',
+                height: '8px',
+                backgroundColor: '#fbbf24',
+                borderRadius: '50%',
+                animation: 'ping 2s infinite'
+              }}></div>
+              <div style={{
+                position: 'absolute',
+                bottom: '12px',
+                left: '24px',
+                width: '4px',
+                height: '4px',
+                backgroundColor: '#fde047',
+                borderRadius: '50%',
+                animation: 'ping 2s infinite'
+              }}></div>
             </div>
-          </section>
-        ) : (
-          /* Room Content */
-          <div>
-            {/* Back Button */}
-            <div className="mb-8 flex items-center">
-              <button 
-                onClick={disconnect}
-                className="flex items-center space-x-2 px-4 py-2 bg-white/20 backdrop-blur-md text-white rounded-full font-semibold shadow-lg hover:bg-white/30 transition-all duration-300 border border-white/20"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>返回语言选择</span>
-              </button>
-            </div>
+          </div>
+        </header>
 
-            {/* Current Room Display */}
-            <div className="mb-8 text-center">
-              <div className="inline-flex items-center space-x-4 px-6 py-3 bg-white/20 backdrop-blur-md text-white rounded-full font-semibold shadow-lg border border-white/20">
-                <div className="text-2xl">{selectedRoom.flag}</div>
-                <span className="text-lg">{selectedRoom.name} 房间</span>
-              </div>
-            </div>
-
-            {/* Subtitle Display Area */}
-            <section className="mb-12">
-              <div className="relative z-10 bg-white rounded-3xl shadow-lg p-8 max-w-4xl mx-auto border-2 border-gray-100">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">字幕显示区</h2>
-                <div className="bg-gray-50 rounded-2xl p-8 min-h-[200px] flex items-center justify-center">
-                  {subtitle ? (
-                    <div className="text-center">
-                      <p className="text-lg text-gray-800 mb-2">{subtitle}</p>
-                      <p className="text-sm text-gray-500">当前语言: {selectedRoom.lang}</p>
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-400">
-                      <div className="text-6xl mb-4">📺</div>
-                      <p className="text-lg">实时翻译字幕将在此显示</p>
-                      <p className="text-sm mt-2">当前语言: {selectedRoom.lang}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Audio Control Bar */}
-            <section className="mb-12">
-              <div className="relative z-10 bg-white rounded-3xl shadow-lg p-6 max-w-4xl mx-auto border-2 border-gray-100">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">音频播放控制</h2>
-                <div className="flex items-center justify-center space-x-6">
-                  <button 
-                    onClick={togglePlayPause}
-                    className="p-4 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors"
+        {/* Main Content Container */}
+        <main style={{
+          flex: 1,
+          maxWidth: '1152px',
+          margin: '0 auto',
+          width: '100%',
+          padding: '32px 16px',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          {!selectedRoom ? (
+            /* Language Room Selection */
+            <section style={{ marginBottom: '48px' }}>
+              <h2 style={{
+                fontSize: '20px',
+                fontWeight: '600',
+                color: 'rgba(255, 255, 255, 0.9)',
+                marginBottom: '24px',
+                textAlign: 'center'
+              }}>语言房间选择</h2>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '16px',
+                maxWidth: '800px',
+                margin: '0 auto'
+              }}>
+                {languages.map((item, index) => (
+                  <div 
+                    key={index} 
+                    onClick={() => joinRoom(item)}
+                    style={{
+                      position: 'relative',
+                      zIndex: 10,
+                      background: 'white',
+                      borderRadius: '16px',
+                      padding: '24px',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                      transition: 'all 0.3s ease',
+                      cursor: 'pointer',
+                      border: '2px solid #f3f4f6'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.05)';
+                      e.currentTarget.style.boxShadow = '0 25px 50px rgba(0, 0, 0, 0.25)';
+                      e.currentTarget.style.borderColor = '#c084fc';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.1)';
+                      e.currentTarget.style.borderColor = '#f3f4f6';
+                    }}
                   >
-                    {isPlaying ? (
-                      <Pause className="w-6 h-6 text-purple-700" />
-                    ) : (
-                      <Play className="w-6 h-6 text-purple-700" />
-                    )}
-                  </button>
-                  <div className="flex-1 max-w-md mx-4">
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                      value={volume}
-                      onChange={handleVolumeChange}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                    />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: '48px', marginBottom: '8px' }}>{item.flag}</div>
+                      <div style={{ fontSize: '18px', fontWeight: '500', color: '#1f2937' }}>{item.name}</div>
+                      <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>{item.lang}</div>
+                    </div>
                   </div>
-                  <button className="p-4 bg-purple-100 rounded-full hover:bg-purple-200 transition-colors">
-                    <Volume2 className="w-6 h-6 text-purple-700" />
-                  </button>
+                ))}
+              </div>
+            </section>
+          ) : (
+            /* Room Content */
+            <div>
+              {/* Back Button */}
+              <div style={{ marginBottom: '32px', display: 'flex', alignItems: 'center' }}>
+                <button 
+                  onClick={disconnect}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 16px',
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    backdropFilter: 'blur(12px)',
+                    color: 'white',
+                    borderRadius: '9999px',
+                    fontWeight: '600',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+                  }}
+                >
+                  <ArrowLeft style={{ width: '16px', height: '16px' }} />
+                  <span>返回语言选择</span>
+                </button>
+              </div>
+
+              {/* Current Room Display */}
+              <div style={{ marginBottom: '32px', textAlign: 'center' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '16px',
+                  padding: '12px 24px',
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  backdropFilter: 'blur(12px)',
+                  color: 'white',
+                  borderRadius: '9999px',
+                  fontWeight: '600',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)'
+                }}>
+                  <div style={{ fontSize: '32px' }}>{selectedRoom.flag}</div>
+                  <span style={{ fontSize: '18px' }}>{selectedRoom.name} 房间</span>
                 </div>
               </div>
-            </section>
 
-            {/* Translation Control Area */}
-            <section className="mb-8">
-              <h2 className="text-xl font-semibold text-white/90 mb-6 text-center">翻译控制区域</h2>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-2xl mx-auto">
-                <button 
-                  onClick={toggleTranslation}
-                  disabled={!isConnected || !agentParticipant}
-                  className={`group relative px-8 py-4 ${
-                    !isConnected ? 'bg-gray-500' : 
-                    isTranslating ? 'bg-red-600' : 'bg-gradient-to-r from-purple-600 to-purple-700'
-                  } text-white rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 flex items-center space-x-3 disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  <Mic className="w-5 h-5" />
-                  <span>{isTranslating ? '停止实时翻译' : '启动实时翻译'}</span>
-                </button>
-                
-                <button className="px-8 py-4 bg-white text-purple-700 rounded-2xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 border-2 border-purple-200 hover:border-purple-300 flex items-center space-x-3">
-                  <Settings className="w-5 h-5" />
-                  <span>设置选项</span>
-                </button>
-              </div>
-            </section>
+              {/* Subtitle Display Area */}
+              <section style={{ marginBottom: '48px' }}>
+                <div style={{
+                  position: 'relative',
+                  zIndex: 10,
+                  background: 'white',
+                  borderRadius: '24px',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                  padding: '32px',
+                  maxWidth: '800px',
+                  margin: '0 auto',
+                  border: '2px solid #f3f4f6'
+                }}>
+                  <h2 style={{
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    color: '#1f2937',
+                    marginBottom: '24px',
+                    textAlign: 'center'
+                  }}>字幕显示区</h2>
+                  <div style={{
+                    background: '#f9fafb',
+                    borderRadius: '16px',
+                    padding: '32px',
+                    minHeight: '200px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {subtitle ? (
+                      <div style={{ textAlign: 'center' }}>
+                        <p style={{ fontSize: '18px', color: '#1f2937', marginBottom: '8px' }}>{subtitle}</p>
+                        <p style={{ fontSize: '14px', color: '#6b7280' }}>当前语言: {selectedRoom.lang}</p>
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', color: '#9ca3af' }}>
+                        <div style={{ fontSize: '64px', marginBottom: '16px' }}>📺</div>
+                        <p style={{ fontSize: '18px' }}>实时翻译字幕将在此显示</p>
+                        <p style={{ fontSize: '14px', marginTop: '8px' }}>当前语言: {selectedRoom.lang}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
 
-            {/* LiveKit Connection */}
-            {token && (
-              <LiveKitRoom
-                token={token}
-                serverUrl={process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
-                options={{
-                  adaptiveStream: true,
-                  dynacast: true,
-                }}
-                onConnected={handleRoomConnected}
-                onDisconnected={() => {
-                  console.log('已断开LiveKit房间连接');
-                  setIsConnected(false);
-                  setAgentParticipant(null);
-                }}
-              />
-            )}
-          </div>
-        )}
-      </main>
+              {/* Audio Control Bar */}
+              <section style={{ marginBottom: '48px' }}>
+                <div style={{
+                  position: 'relative',
+                  zIndex: 10,
+                  background: 'white',
+                  borderRadius: '24px',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                  padding: '24px',
+                  maxWidth: '800px',
+                  margin: '0 auto',
+                  border: '2px solid #f3f4f6'
+                }}>
+                  <h2 style={{
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    color: '#1f2937',
+                    marginBottom: '24px',
+                    textAlign: 'center'
+                  }}>音频播放控制</h2>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '24px'
+                  }}>
+                    <button 
+                      onClick={togglePlayPause}
+                      style={{
+                        padding: '16px',
+                        background: '#ede9fe',
+                        borderRadius: '50%',
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#ddd6fe';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#ede9fe';
+                      }}
+                    >
+                      {isPlaying ? (
+                        <Pause style={{ width: '24px', height: '24px', color: '#6d28d9' }} />
+                      ) : (
+                        <Play style={{ width: '24px', height: '24px', color: '#6d28d9' }} />
+                      )}
+                    </button>
+                    <div style={{ flex: 1, maxWidth: '300px', margin: '0 16px' }}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        value={volume}
+                        onChange={handleVolumeChange}
+                        style={{
+                          width: '100%',
+                          height: '8px',
+                          background: '#e5e7eb',
+                          borderRadius: '4px',
+                          appearance: 'none',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                    <button style={{
+                      padding: '16px',
+                      background: '#ede9fe',
+                      borderRadius: '50%',
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}>
+                      <Volume2 style={{ width: '24px', height: '24px', color: '#6d28d9' }} />
+                    </button>
+                  </div>
+                </div>
+              </section>
 
-      {/* Footer */}
-      <footer className="py-6 text-center text-gray-500 text-sm relative z-10">
-        <p className="text-white/80 font-medium">© 2025 Pryme+ | 实时语音翻译系统</p>
-      </footer>
-    </div>
+              {/* Translation Control Area */}
+              <section style={{ marginBottom: '32px' }}>
+                <h2 style={{
+                  fontSize: '20px',
+                  fontWeight: '600',
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  marginBottom: '24px',
+                  textAlign: 'center'
+                }}>翻译控制区域</h2>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  maxWidth: '500px',
+                  margin: '0 auto'
+                }}>
+                  <button 
+                    onClick={toggleTranslation}
+                    disabled={!isConnected || !agentParticipant}
+                    style={{
+                      position: 'relative',
+                      padding: '16px 32px',
+                      background: !isConnected ? '#6b7280' : 
+                        isTranslating ? '#dc2626' : 'linear-gradient(to right, #7c3aed, #6d28d9)',
+                      color: 'white',
+                      borderRadius: '16px',
+                      fontWeight: '600',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                      border: 'none',
+                      cursor: (!isConnected || !agentParticipant) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      transition: 'all 0.3s ease',
+                      opacity: (!isConnected || !agentParticipant) ? 0.5 : 1
+                    }}
+                  >
+                    <Mic style={{ width: '20px', height: '20px' }} />
+                    <span>{isTranslating ? '停止实时翻译' : '启动实时翻译'}</span>
+                  </button>
+                  
+                  <button style={{
+                    padding: '16px 32px',
+                    background: 'white',
+                    color: '#7c3aed',
+                    borderRadius: '16px',
+                    fontWeight: '600',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                    border: '2px solid #c084fc',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    transition: 'all 0.3s ease'
+                  }}>
+                    <Settings style={{ width: '20px', height: '20px' }} />
+                    <span>设置选项</span>
+                  </button>
+                </div>
+              </section>
+
+              {/* LiveKit Connection */}
+              {token && (
+                <LiveKitRoom
+                  token={token}
+                  serverUrl={process.env.LIVEKIT_URL || process.env.VITE_LIVEKIT_URL || 'wss://your-livekit-url.livekit.cloud'}
+                  options={{
+                    adaptiveStream: true,
+                    dynacast: true,
+                  }}
+                  onConnected={handleRoomConnected}
+                  onDisconnected={() => {
+                    console.log('已断开LiveKit房间连接');
+                    setIsConnected(false);
+                    setAgentParticipant(null);
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Footer */}
+        <footer style={{
+          padding: '24px',
+          textAlign: 'center',
+          fontSize: '14px',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          <p style={{ color: 'rgba(255, 255, 255, 0.8)', fontWeight: '500', margin: 0 }}>
+            © 2025 Pryme+ | 实时语音翻译系统
+          </p>
+        </footer>
+      </div>
+    </>
   );
 }
