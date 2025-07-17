@@ -130,7 +130,7 @@ async def entrypoint(ctx: JobContext):
     # 获取房间名称
     room_name = ctx.room.name
     logger.info(f"🏠 连接到房间: {room_name}")
-    logger.info(f"🔍 房间参与者数量: {len(ctx.room.participants)}")
+    logger.info(f"🔍 房间参与者数量: {ctx.room.num_participants}")
     
     # 根据房间名称确定目标语言
     target_language = None
