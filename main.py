@@ -50,7 +50,7 @@ ROOM_LANGUAGE_MAP = {
 
 # Token服务器配置
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://translated-frontend.onrender.com", "http://localhost:5173", "http://localhost:3000"])
 
 LIVEKIT_API_KEY = os.getenv('LIVEKIT_API_KEY')
 LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET')
@@ -129,7 +129,8 @@ async def entrypoint(ctx: JobContext):
     
     # 获取房间名称
     room_name = ctx.room.name
-    logger.info(f"连接到房间: {room_name}")
+    logger.info(f"🏠 连接到房间: {room_name}")
+    logger.info(f"🔍 房间参与者数量: {len(ctx.room.participants)}")
     
     # 根据房间名称确定目标语言
     target_language = None
@@ -139,15 +140,16 @@ async def entrypoint(ctx: JobContext):
             break
     
     if not target_language:
-        logger.error(f"未知的房间名称: {room_name}，支持的房间前缀: {list(ROOM_LANGUAGE_MAP.keys())}")
+        logger.error(f"❌ 未知的房间名称: {room_name}，支持的房间前缀: {list(ROOM_LANGUAGE_MAP.keys())}")
         return
     
     language_name = LANGUAGE_CONFIG[target_language]["name"]
-    logger.info(f"为房间 '{room_name}' 启动 {language_name} 翻译代理...")
+    logger.info(f"🌍 为房间 '{room_name}' 启动 {language_name} 翻译代理...")
     
     try:
         # 创建翻译Agent
         agent = create_translation_agent(target_language)
+        logger.info(f"🤖 {language_name} Agent创建成功")
         
         # 创建AgentSession并配置组件
         session = AgentSession(
@@ -157,25 +159,60 @@ async def entrypoint(ctx: JobContext):
             tts=agent.tts,
         )
         
-        logger.info(f"启动 {language_name} 翻译代理...")
+        logger.info(f"📝 组件配置:")
+        logger.info(f"  VAD: {type(agent.vad).__name__}")
+        logger.info(f"  STT: {type(agent.stt).__name__} (模型: nova-2-zh)")
+        logger.info(f"  LLM: {type(agent.llm).__name__} (模型: llama3-8b-8192)")
+        logger.info(f"  TTS: {type(agent.tts).__name__} (语言: {target_language})")
+        
+        logger.info(f"🚀 启动 {language_name} 翻译代理...")
         
         # 启动session - 根据1.1.7 API
         await session.start(agent=agent, room=ctx.room)
         
-        logger.info(f"{language_name} 翻译代理已成功启动并连接到房间")
+        logger.info(f"✅ {language_name} 翻译代理已成功启动并连接到房间")
+        logger.info(f"🎧 正在监听音频输入...")
         
         # 发送欢迎消息
-        await session.generate_reply(
-            instructions=f"简短地用{language_name}向用户问好，告诉他们你是{language_name}实时翻译助手。"
-        )
+        try:
+            await session.generate_reply(
+                instructions=f"简短地用{language_name}向用户问好，告诉他们你是{language_name}实时翻译助手。"
+            )
+            logger.info(f"👋 {language_name} 欢迎消息已发送")
+        except Exception as e:
+            logger.warning(f"⚠️ 发送欢迎消息失败: {e}")
         
-        logger.info(f"{language_name} 翻译代理正在运行，等待语音输入...")
+        logger.info(f"🔄 {language_name} 翻译代理正在运行，等待语音输入...")
+        
+        # 监听音频事件
+        def on_audio_received(audio_frame):
+            logger.debug(f"🎵 收到音频帧: {len(audio_frame.data)} bytes")
+        
+        def on_stt_start():
+            logger.info(f"🎤 STT开始识别...")
+        
+        def on_stt_result(text):
+            logger.info(f"📝 STT识别结果: '{text}'")
+        
+        def on_llm_start(prompt):
+            logger.info(f"🧠 LLM开始翻译: '{prompt[:50]}...'")
+        
+        def on_llm_result(translation):
+            logger.info(f"🌍 LLM翻译结果: '{translation}'")
+        
+        def on_tts_start(text):
+            logger.info(f"🗣️ TTS开始合成: '{text}'")
+        
+        def on_tts_result(audio_len):
+            logger.info(f"🔊 TTS合成完成: {audio_len} bytes音频")
         
         # 保持运行状态，等待session完成
         # 注意：在1.1.7中，session会自动处理音频流和翻译
         
     except Exception as e:
-        logger.error(f"启动 {language_name} 翻译代理时出错: {e}")
+        logger.error(f"❌ 启动 {language_name} 翻译代理时出错: {e}")
+        import traceback
+        logger.error(f"错误详情:\n{traceback.format_exc()}")
         raise
 
 def prewarm(proc: JobProcess):
