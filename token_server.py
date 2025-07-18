@@ -87,7 +87,15 @@ def get_token():
         return response, 200
         
     try:
+        logger.info("📥 开始处理POST请求...")
+        
+        # 打印原始请求体
+        raw_data = request.get_data()
+        logger.info(f"📄 原始请求体: {raw_data}")
+        
         data = request.get_json()
+        logger.info(f"📋 解析后的JSON: {data}")
+        
         if not data:
             logger.error("❌ 请求体为空或格式错误")
             return jsonify({'error': '请求体为空或格式错误'}), 400
@@ -100,6 +108,11 @@ def get_token():
             return jsonify({'error': '缺少房间名称'}), 400
         
         logger.info(f"🎫 为用户 {identity} 生成房间 {room_name} 的token")
+        
+        # 检查环境变量
+        logger.info(f"🔑 LIVEKIT_API_KEY: {'已设置' if LIVEKIT_API_KEY else '❌未设置'}")
+        logger.info(f"🔑 LIVEKIT_API_SECRET: {'已设置' if LIVEKIT_API_SECRET else '❌未设置'}")
+        logger.info(f"🔑 LIVEKIT_URL: {LIVEKIT_URL if LIVEKIT_URL else '❌未设置'}")
         
         # 创建AccessToken
         token = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
