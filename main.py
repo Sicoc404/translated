@@ -2,21 +2,27 @@
 # -*- coding: utf-8 -*-
 
 """
-LiveKit Agents 多语言实时翻译广播系统 - 主入口
-使用LiveKit Agents 1.1.7的标准工作流程
+LiveKit Agent翻译服务 - 专门的翻译服务
+为前端提供翻译API和LiveKit Agent功能
 """
 
 import os
 import sys
 import asyncio
 import logging
+import threading
 from dotenv import load_dotenv
-from livekit.agents import JobContext, WorkerOptions, cli, JobProcess, AgentSession
-from agent_config import (
-    create_translation_components, 
-    create_translation_agent, 
-    LANGUAGE_CONFIG
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from livekit.agents import (
+    Agent,
+    AgentSession,
+    JobContext, 
+    WorkerOptions, 
+    cli, 
+    JobProcess
 )
+from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
 # 加载环境变量
 load_dotenv()
@@ -27,7 +33,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger("translation-agent")
+logger = logging.getLogger("agent-translation")
+
+# Flask应用配置
+app = Flask(__name__)
+
+# CORS配置 - 只允许前端域名访问
+CORS(app, origins=["https://translated-frontend.onrender.com"])
 
 # 房间与语言的映射关系
 ROOM_LANGUAGE_MAP = {
@@ -37,123 +49,228 @@ ROOM_LANGUAGE_MAP = {
     "Pryme-Malay": "ms"
 }
 
+# Agent状态管理
+active_agents = {}
+agent_stats = {
+    "total_sessions": 0,
+    "active_sessions": 0,
+    "supported_languages": list(LANGUAGE_CONFIG.keys())
+}
+
+@app.route('/health', methods=['GET'])
+def health():
+    """健康检查端点 - Render.com监控使用"""
+    return jsonify({
+        "status": "ok", 
+        "service": "agent-translation",
+        "active_agents": len(active_agents),
+        "supported_languages": agent_stats["supported_languages"]
+    })
+
+@app.route('/', methods=['GET'])
+def root():
+    """根路径 - 服务信息"""
+    return jsonify({
+        "message": "Agent Translation Service is running", 
+        "status": "active",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health (GET)",
+            "status": "/api/status (GET)",
+            "agents": "/api/agents (GET)"
+        },
+        "supported_rooms": list(ROOM_LANGUAGE_MAP.keys()),
+        "cors_enabled": True
+    })
+
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """获取服务状态"""
+    try:
+        # 检查环境变量
+        required_vars = ["LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET", 
+                        "DEEPGRAM_API_KEY", "GROQ_API_KEY", "CARTESIA_API_KEY"]
+        
+        env_status = {}
+        for var in required_vars:
+            env_status[var] = "configured" if os.getenv(var) else "missing"
+        
+        return jsonify({
+            "service": "agent-translation",
+            "status": "running",
+            "statistics": agent_stats,
+            "environment": env_status,
+            "active_agents": list(active_agents.keys())
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ 获取状态失败: {e}")
+        return jsonify({"error": f"获取状态失败: {str(e)}"}), 500
+
+@app.route('/api/agents', methods=['GET'])
+def get_agents():
+    """获取活跃的Agent信息"""
+    try:
+        agents_info = []
+        for room_name, agent_info in active_agents.items():
+            agents_info.append({
+                "room": room_name,
+                "language": agent_info.get("language"),
+                "started_at": agent_info.get("started_at"),
+                "status": "active"
+            })
+        
+        return jsonify({
+            "active_agents": agents_info,
+            "total_count": len(agents_info),
+            "supported_languages": LANGUAGE_CONFIG
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ 获取Agent信息失败: {e}")
+        return jsonify({"error": f"获取Agent信息失败: {str(e)}"}), 500
+
+def start_flask_api():
+    """在单独线程中启动Flask API服务器"""
+    try:
+        port = int(os.environ.get("PORT", 5000))
+        logger.info(f"🚀 启动Agent翻译API服务器 - 端口: {port}")
+        logger.info(f"🌐 CORS允许域名: https://translated-frontend.onrender.com")
+        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        logger.error(f"❌ Flask API服务器启动失败: {e}")
+
 async def entrypoint(ctx: JobContext):
     """
-    LiveKit Agent的入口点函数
-    根据房间名称确定翻译语言并启动相应的代理
+    LiveKit Agent入口点 - 处理翻译逻辑
     
     Args:
         ctx: JobContext实例，包含房间连接信息
     """
-    # 连接到房间
-    await ctx.connect()
-    
-    # 获取房间名称
-    room_name = ctx.room.name
-    logger.info(f"🏠 连接到房间: {room_name}")
-    
-    # 根据房间名称确定目标语言
-    target_language = None
-    for room_prefix, language_code in ROOM_LANGUAGE_MAP.items():
-        if room_name.startswith(room_prefix):
-            target_language = language_code
-            break
-    
-    if not target_language:
-        logger.error(f"❌ 未知的房间名称: {room_name}，支持的房间前缀: {list(ROOM_LANGUAGE_MAP.keys())}")
-        return
-    
-    language_name = LANGUAGE_CONFIG[target_language]["name"]
-    logger.info(f"🚀 为房间 '{room_name}' 启动 {language_name} 翻译代理...")
-    
     try:
-        # 第一步：创建翻译组件
-        logger.info(f"📦 创建 {language_name} 翻译组件...")
+        # 连接到房间
+        await ctx.connect()
+        
+        # 获取房间信息
+        room_name = ctx.room.name
+        logger.info(f"🏠 Agent连接到房间: {room_name}")
+        logger.info(f"👥 当前房间参与者数量: {ctx.room.num_participants}")
+        
+        # 确定目标语言
+        target_language = None
+        for room_prefix, language_code in ROOM_LANGUAGE_MAP.items():
+            if room_name.startswith(room_prefix):
+                target_language = language_code
+                break
+        
+        if not target_language:
+            logger.error(f"❌ 不支持的房间: {room_name}")
+            logger.error(f"支持的房间前缀: {list(ROOM_LANGUAGE_MAP.keys())}")
+            return
+        
+        language_name = LANGUAGE_CONFIG[target_language]["name"]
+        logger.info(f"🌍 启动 {language_name} 翻译Agent...")
+        
+        # 更新统计信息
+        agent_stats["total_sessions"] += 1
+        agent_stats["active_sessions"] += 1
+        active_agents[room_name] = {
+            "language": target_language,
+            "language_name": language_name,
+            "started_at": asyncio.get_event_loop().time()
+        }
+        
+        # 创建翻译组件
+        logger.info(f"🔧 创建 {language_name} 翻译组件...")
         vad, stt, llm, tts = create_translation_components(target_language)
         
-        # 第二步：创建Agent框架
-        logger.info(f"🤖 创建 {language_name} Agent框架...")
+        # 创建Agent
+        logger.info(f"🤖 创建 {language_name} Agent...")
         agent = create_translation_agent(target_language)
         
-        # 第三步：使用AgentSession将组件与Agent组合
-        logger.info(f"🔗 初始化 {language_name} AgentSession...")
+        # 创建并启动AgentSession
+        logger.info(f"📡 初始化 {language_name} AgentSession...")
         session = AgentSession(
-            agent=agent,
             vad=vad,
             stt=stt,
             llm=llm,
             tts=tts,
-            room=ctx.room,
         )
         
-        # 第四步：启动AgentSession
-        logger.info(f"▶️ 启动 {language_name} 翻译代理会话...")
-        session.start()
+        logger.info(f"✅ {language_name} 翻译Agent配置完成:")
+        logger.info(f"  🎤 VAD: {type(vad).__name__}")
+        logger.info(f"  🗣️ STT: {type(stt).__name__} (中文识别)")
+        logger.info(f"  🧠 LLM: {type(llm).__name__} (Groq翻译)")
+        logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
         
-        logger.info(f"✅ {language_name} 翻译代理已成功启动并运行")
+        # 启动Agent会话
+        logger.info(f"▶️ 启动 {language_name} 翻译会话...")
+        await session.start(agent=agent, room=ctx.room)
         
-        # 可选：发送初始欢迎消息
+        logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
+        logger.info(f"🎧 等待用户语音输入进行实时翻译...")
+        
+        # 发送欢迎消息
         try:
-            await session.agent.say(f"你好！我是 {language_name} 翻译助手，我会将中文实时翻译成 {language_name}。")
-            logger.info(f"📢 已发送 {language_name} 欢迎消息")
+            welcome_msg = f"你好！我是{language_name}实时翻译助手，我会将你的中文转换为{language_name}。"
+            await session.generate_reply(instructions=welcome_msg)
+            logger.info(f"👋 {language_name} 欢迎消息已发送")
         except Exception as e:
             logger.warning(f"⚠️ 发送欢迎消息失败: {e}")
         
-        # 保持会话运行直到断开连接
-        await session.aclose()
-        logger.info(f"🔌 {language_name} 翻译代理会话已关闭")
+        # 保持会话运行
+        logger.info(f"🔄 {language_name} Agent运行中，监听语音输入...")
         
     except Exception as e:
-        logger.error(f"❌ 启动 {language_name} 翻译代理时出错: {e}")
+        logger.error(f"❌ Agent启动失败: {e}")
         import traceback
         logger.error(f"错误详情:\n{traceback.format_exc()}")
         raise
+    finally:
+        # 清理Agent状态
+        if room_name in active_agents:
+            del active_agents[room_name]
+            agent_stats["active_sessions"] -= 1
+        logger.info(f"🔌 {room_name} Agent会话已结束")
 
 def prewarm(proc: JobProcess):
-    """
-    预热函数 - 在每个子进程启动时执行
-    可以在此处加载模型或执行其他预热操作
-    
-    Args:
-        proc: JobProcess实例
-    """
-    logger.info("🔥 正在预热翻译模型和连接...")
-    # 这里可以添加模型预加载代码
-    # 例如预加载Silero VAD模型等
+    """预热函数 - 预加载模型和资源"""
+    logger.info("🔥 正在预热翻译模型...")
+    # 这里可以预加载模型
     logger.info("✅ 预热完成")
 
 def main():
-    """
-    主函数 - 使用LiveKit CLI启动Worker
-    """
-    # 检查必要的环境变量
+    """主函数 - 启动Agent翻译服务"""
+    logger.info("🌟 Agent翻译服务启动中...")
+    
+    # 检查环境变量
     required_env_vars = [
-        "LIVEKIT_URL",
-        "LIVEKIT_API_KEY", 
-        "LIVEKIT_API_SECRET",
-        "DEEPGRAM_API_KEY",
-        "GROQ_API_KEY",
-        "CARTESIA_API_KEY"
+        "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
+        "DEEPGRAM_API_KEY", "GROQ_API_KEY", "CARTESIA_API_KEY"
     ]
     
     missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     if missing_vars:
-        logger.error(f"❌ 缺少必要的环境变量: {missing_vars}")
+        logger.error(f"❌ 缺少环境变量: {missing_vars}")
         sys.exit(1)
     
-    logger.info("🚀 LiveKit 多语言翻译代理启动中...")
     logger.info(f"🌍 支持的语言: {', '.join([f'{code}({info['name']})' for code, info in LANGUAGE_CONFIG.items()])}")
     logger.info(f"🏠 支持的房间: {', '.join(ROOM_LANGUAGE_MAP.keys())}")
     
-    # 配置Worker选项
+    # 启动Flask API服务器
+    logger.info("🚀 启动Flask API服务器...")
+    flask_thread = threading.Thread(target=start_flask_api, daemon=True)
+    flask_thread.start()
+    
+    # 配置LiveKit Agent Worker
+    logger.info("⚡ 启动LiveKit Agent Worker...")
     opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
-        num_idle_processes=1,  # 控制空闲进程数量
+        num_idle_processes=1
     )
     
     # 运行Agent Worker
-    logger.info("⚡ 启动LiveKit Agent Worker...")
     cli.run_app(opts)
 
 if __name__ == "__main__":
