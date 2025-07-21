@@ -21,22 +21,22 @@ LANGUAGE_CONFIG = {
     "ja": {
         "name": "日语",
         "voice_id": "95856005-0332-41b0-935f-352e296aa0df",  # Cartesia日语voice ID
-        "deepgram_model": "nova-2-ja",
+        "deepgram_model": "nova-2",  # 使用标准nova-2模型
     },
     "ko": {
         "name": "韩语", 
         "voice_id": "7d787990-4c3a-4766-9450-8c3ac6718b13",  # Cartesia韩语voice ID
-        "deepgram_model": "nova-2-ko",
+        "deepgram_model": "nova-2",  # 使用标准nova-2模型
     },
     "vi": {
         "name": "越南语",
         "voice_id": "f9836c6e-a0bd-460e-9d3c-f7299fa60f94",  # Cartesia越南语voice ID  
-        "deepgram_model": "nova-2-general",
+        "deepgram_model": "nova-2",  # 使用标准nova-2模型
     },
     "ms": {
         "name": "马来语",
         "voice_id": "7d787990-4c3a-4766-9450-8c3ac6718b13",  # 使用英语voice作为马来语
-        "deepgram_model": "nova-2-general",
+        "deepgram_model": "nova-2",  # 使用标准nova-2模型
     }
 }
 
@@ -226,12 +226,12 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
     
     # STT配置 - 设置为源语言（中文）
     try:
-        logger.info(f"🗣️ 初始化STT (Deepgram nova-2-zh)...")
+        logger.info(f"🗣️ 初始化STT (Deepgram nova-2)...")
         stt = deepgram.STT(
-            model="nova-2-zh",  # 中文模型
+            model="nova-2",  # 中文模型
             language="zh",
         )
-        logger.info(f"✅ STT初始化成功 - 模型: nova-2-zh, 语言: zh")
+        logger.info(f"✅ STT初始化成功 - 模型: nova-2, 语言: zh")
     except Exception as e:
         logger.error(f"❌ STT初始化失败: {e}")
         raise
