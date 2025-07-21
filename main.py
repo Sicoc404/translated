@@ -11,6 +11,7 @@ import sys
 import asyncio
 import logging
 import threading
+import json
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -203,6 +204,54 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"  🧠 LLM: {type(llm).__name__} (Groq翻译)")
         logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
         
+        # 添加数据消息处理器
+        async def handle_data_received(data: bytes, participant: any):
+            """处理从客户端接收的数据消息"""
+            try:
+                message = data.decode('utf-8')
+                logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
+                
+                # 尝试解析JSON消息
+                import json
+                try:
+                    json_data = json.loads(message)
+                    if json_data.get('type') == 'translation_control':
+                        action = json_data.get('action')
+                        logger.info(f"[LOG][rpc-recv] 翻译控制命令: {action}")
+                        
+                        if action == 'start':
+                            logger.info(f"[LOG][rpc-recv] 启动翻译模式")
+                            # 发送确认消息
+                            response_data = json.dumps({
+                                'type': 'translation_status',
+                                'status': 'started',
+                                'language': language_name,
+                                'timestamp': asyncio.get_event_loop().time()
+                            }).encode('utf-8')
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译启动确认已发送")
+                            
+                        elif action == 'stop':
+                            logger.info(f"[LOG][rpc-recv] 停止翻译模式")
+                            # 发送确认消息
+                            response_data = json.dumps({
+                                'type': 'translation_status', 
+                                'status': 'stopped',
+                                'timestamp': asyncio.get_event_loop().time()
+                            }).encode('utf-8')
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译停止确认已发送")
+                            
+                except json.JSONDecodeError:
+                    logger.warning(f"[LOG][rpc-recv] 无法解析JSON消息: {message}")
+                    
+            except Exception as e:
+                logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
+        
+        # 注册数据消息处理器
+        ctx.room.on('data_received', handle_data_received)
+        logger.info(f"📨 数据消息处理器已注册")
+        
         # 启动Agent会话
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
         await session.start(agent=agent, room=ctx.room)
@@ -210,11 +259,16 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
         logger.info(f"🎧 等待用户语音输入进行实时翻译...")
         
-        # 发送欢迎消息
+        # 发送欢迎消息到数据通道
         try:
-            welcome_msg = f"你好！我是{language_name}实时翻译助手，我会将你的中文转换为{language_name}。"
-            await session.generate_reply(instructions=welcome_msg)
-            logger.info(f"👋 {language_name} 欢迎消息已发送")
+            welcome_data = json.dumps({
+                'type': 'translation',
+                'text': f"你好！我是{language_name}实时翻译助手，我会将你的中文转换为{language_name}。",
+                'language': target_language,
+                'timestamp': asyncio.get_event_loop().time()
+            }).encode('utf-8')
+            await ctx.room.local_participant.publish_data(welcome_data)
+            logger.info(f"[LOG][subtitles-send] 欢迎消息已通过数据通道发送: {language_name}")
         except Exception as e:
             logger.warning(f"⚠️ 发送欢迎消息失败: {e}")
         
