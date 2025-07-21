@@ -28,13 +28,33 @@ function LiveKitRoomComponents({
     
     // 监听本地participant的track发布事件
     room.localParticipant.on('trackPublished', (publication: any) => {
-      console.log('📤 本地track已发布:', {
+      console.log('[LOG][audio-in] 本地track已发布:', {
         kind: publication.kind,
         source: publication.source,
         trackSid: publication.trackSid,
         enabled: publication.track?.enabled,
         muted: publication.track?.muted
       });
+      
+      // 如果是麦克风轨道，添加额外监控
+      if (publication.source === Track.Source.Microphone) {
+        console.log('[LOG][audio-in] 麦克风轨道已发布，开始监控音频数据');
+        
+        // 监听轨道状态变化
+        if (publication.track) {
+          publication.track.on('muted', () => {
+            console.log('[LOG][audio-in] 麦克风已静音');
+          });
+          
+          publication.track.on('unmuted', () => {
+            console.log('[LOG][audio-in] 麦克风已取消静音');
+          });
+          
+          publication.track.on('ended', () => {
+            console.log('[LOG][audio-in] 麦克风轨道已结束');
+          });
+        }
+      }
     });
     
     // 监听本地participant的track取消发布事件
@@ -379,7 +399,7 @@ export default function PrymeUI() {
     try {
       const decoder = new TextDecoder();
       const message = decoder.decode(e.payload);
-      console.log('📨 收到数据消息:', {
+      console.log('[LOG][subtitles-recv] 收到数据消息:', {
         sender: e.participant?.identity,
         messageLength: message.length,
         message: message.substring(0, 100) + (message.length > 100 ? '...' : '')
@@ -388,17 +408,21 @@ export default function PrymeUI() {
       // 尝试解析JSON
       try {
         const jsonData = JSON.parse(message);
-        console.log('📋 解析JSON数据:', jsonData);
+        console.log('[LOG][subtitles-recv] 解析JSON数据:', jsonData);
         
         if (jsonData.type === 'translation' || jsonData.type === 'transcript') {
-          setSubtitle(jsonData.text || jsonData.content || message);
-          console.log('📺 更新字幕:', jsonData.text || jsonData.content);
+          const subtitleText = jsonData.text || jsonData.content || message;
+          setSubtitle(subtitleText);
+          console.log('[LOG][subtitles-recv] 更新字幕:', subtitleText);
+        } else if (jsonData.type === 'translation_status') {
+          console.log('[LOG][subtitles-recv] 翻译状态更新:', jsonData.status);
+          setSubtitle(`翻译状态: ${jsonData.status} (${jsonData.language || ''})`);
         } else {
           setSubtitle(message);
         }
       } catch (parseError) {
         // 如果不是JSON，直接作为纯文本处理
-        console.log('📝 纯文本消息:', message);
+        console.log('[LOG][subtitles-recv] 纯文本消息:', message);
         setSubtitle(message);
       }
     } catch (error) {
@@ -992,31 +1016,7 @@ export default function PrymeUI() {
                           alignItems: 'center',
                           justifyContent: 'center'
                         }}
-                        onToggle={(enabled: boolean) => {
-                          console.log(`[LOG][audio-in] 麦克风切换: ${enabled ? '开启' : '关闭'}`);
-                          if (enabled) {
-                            console.log('[LOG][audio-in] 正在启用麦克风...');
-                            // 延迟检查麦克风状态
-                            setTimeout(() => {
-                              const room = roomRef.current;
-                              if (room) {
-                                const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
-                                console.log('[LOG][audio-in] 麦克风启用后状态:', {
-                                  hasTrack: !!micTrack,
-                                  enabled: micTrack?.track ? !micTrack.track.isMuted : false,
-                                  trackId: micTrack?.trackSid,
-                                  mediaStreamTrack: !!micTrack?.track?.mediaStreamTrack
-                                });
-                                
-                                // 如果有音频轨道，添加音频数据监听
-                                if (micTrack?.track?.mediaStreamTrack) {
-                                  console.log('[LOG][audio-in] 开始监控音频输入数据...');
-                                  // 这里可以添加音频数据分析
-                                }
-                              }
-                            }, 500);
-                          }
-                        }}
+
                       />
                     </div>
                   </div>
