@@ -155,22 +155,34 @@ export default function PrymeUI() {
       const room = roomRef.current;
       
       if (!isTranslating) {
-        console.log('调用RPC: start_translation');
-        const result = await room.localParticipant.performRpc({
-          destinationIdentity: agentParticipant.identity,
-          method: 'start_translation',
-          payload: '',
+        console.log('[LOG][rpc-call] 发送翻译开始指令到 Agent');
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify({
+          type: 'translation_control',
+          action: 'start',
+          timestamp: Date.now()
+        }));
+        
+        await room.localParticipant.publishData(data, {
+          reliable: true,
+          destinationIdentities: [agentParticipant.identity]
         });
-        console.log('RPC结果:', result);
+        console.log('[LOG][rpc-call] 翻译开始指令已发送');
         setIsTranslating(true);
       } else {
-        console.log('调用RPC: stop_translation');
-        const result = await room.localParticipant.performRpc({
-          destinationIdentity: agentParticipant.identity,
-          method: 'stop_translation',
-          payload: '',
+        console.log('[LOG][rpc-call] 发送翻译停止指令到 Agent');
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify({
+          type: 'translation_control',
+          action: 'stop',
+          timestamp: Date.now()
+        }));
+        
+        await room.localParticipant.publishData(data, {
+          reliable: true,
+          destinationIdentities: [agentParticipant.identity]
         });
-        console.log('RPC结果:', result);
+        console.log('[LOG][rpc-call] 翻译停止指令已发送');
         setIsTranslating(false);
       }
     } catch (error) {
@@ -979,6 +991,31 @@ export default function PrymeUI() {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center'
+                        }}
+                        onToggle={(enabled: boolean) => {
+                          console.log(`[LOG][audio-in] 麦克风切换: ${enabled ? '开启' : '关闭'}`);
+                          if (enabled) {
+                            console.log('[LOG][audio-in] 正在启用麦克风...');
+                            // 延迟检查麦克风状态
+                            setTimeout(() => {
+                              const room = roomRef.current;
+                              if (room) {
+                                const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
+                                console.log('[LOG][audio-in] 麦克风启用后状态:', {
+                                  hasTrack: !!micTrack,
+                                  enabled: micTrack?.track ? !micTrack.track.isMuted : false,
+                                  trackId: micTrack?.trackSid,
+                                  mediaStreamTrack: !!micTrack?.track?.mediaStreamTrack
+                                });
+                                
+                                // 如果有音频轨道，添加音频数据监听
+                                if (micTrack?.track?.mediaStreamTrack) {
+                                  console.log('[LOG][audio-in] 开始监控音频输入数据...');
+                                  // 这里可以添加音频数据分析
+                                }
+                              }
+                            }, 500);
+                          }
                         }}
                       />
                     </div>
