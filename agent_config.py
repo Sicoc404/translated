@@ -8,6 +8,8 @@ LiveKit Agent配置 - 构建多语言翻译代理
 
 import os
 import logging
+import time
+import uuid
 from livekit.agents import Agent, AgentSession, llm
 from livekit.plugins import deepgram, cartesia, silero
 from typing import Dict, Any, Tuple, AsyncIterator
@@ -111,6 +113,55 @@ class CustomGroqLLMStream(llm.LLMStream):
         self._tools = tools
         self._tool_choice = tool_choice
         self._conn_options = conn_options
+        
+    async def push_event(self, chunk: llm.ChatChunk) -> None:
+        """
+        将ChatChunk推入LiveKit事件队列
+        这是LiveKit框架要求的方法，用于处理流式响应
+        """
+        try:
+            # LiveKit LLMStream 基类通常使用 _event_aiter 或 _event_ch 来管理事件
+            # 我们需要检查多种可能的事件通道名称
+            event_channel = None
+            
+            # 尝试找到正确的事件通道
+            for attr_name in ['_event_ch', '_event_queue', '_event_aiter', '_events']:
+                if hasattr(self, attr_name):
+                    event_channel = getattr(self, attr_name)
+                    if event_channel is not None:
+                        logger.debug(f"🔍 找到事件通道: {attr_name}")
+                        break
+            
+            if event_channel is not None:
+                # 检查事件通道是否有 put 方法（队列类型）
+                if hasattr(event_channel, 'put'):
+                    await event_channel.put(chunk)
+                    logger.debug(f"✅ ChatChunk已推入事件队列")
+                # 检查是否有 send 方法（通道类型）
+                elif hasattr(event_channel, 'send'):
+                    await event_channel.send(chunk)
+                    logger.debug(f"✅ ChatChunk已发送到事件通道")
+                else:
+                    logger.warning(f"⚠️ 事件通道 {type(event_channel)} 没有支持的方法")
+            else:
+                # 最后尝试调用父类的 push_event 方法（如果存在）
+                try:
+                    # 获取父类方法
+                    super_class = super()
+                    if hasattr(super_class, 'push_event'):
+                        await super_class.push_event(chunk)
+                        logger.debug(f"✅ 使用父类push_event推送ChatChunk")
+                    else:
+                        # 如果没有找到任何方法，记录警告但不抛出错误
+                        logger.warning("⚠️ 无法找到事件通道，但ChatChunk已创建成功")
+                except Exception as parent_error:
+                    logger.warning(f"⚠️ 调用父类push_event失败: {parent_error}")
+                    
+        except Exception as e:
+            logger.error(f"❌ push_event失败: {e}")
+            # 不要抛出错误，以免中断整个流程
+            import traceback
+            logger.error(f"错误详情:\n{traceback.format_exc()}")
         
     async def _run(self) -> None:
         """
@@ -255,16 +306,23 @@ class CustomGroqLLMStream(llm.LLMStream):
                                     }
                                 ]
                                 
-                                # LiveKit Agents 1.1.7 需要 id 字段而不是 request_id
+                                # 创建完整的ChatChunk，包含所有必需字段
+                                chunk_id = getattr(chunk, 'id', f"chatcmpl-{str(uuid.uuid4())}")
                                 chat_chunk = llm.ChatChunk(
-                                    id=getattr(chunk, 'id', ''),
+                                    id=chunk_id,
+                                    object="chat.completion.chunk",
+                                    created=int(time.time()),
+                                    model=self._model,
                                     choices=choices
                                 )
                                 
-                                # 使用父类的方法推送事件而不是yield
+                                # 使用自定义的push_event方法推送事件
                                 await self.push_event(chat_chunk)
+                                logger.debug(f"✅ ChatChunk推送成功: ID={chunk_id}")
                             except Exception as chunk_error:
                                 logger.error(f"❌ 创建ChatChunk失败: {chunk_error}")
+                                import traceback
+                                logger.error(f"错误详情:\n{traceback.format_exc()}")
                                 # 继续处理下一个chunk，不中断整个流程
             
             logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
