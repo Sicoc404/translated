@@ -255,8 +255,9 @@ class CustomGroqLLMStream(llm.LLMStream):
                                     }
                                 ]
                                 
+                                # LiveKit Agents 1.1.7 需要 id 字段而不是 request_id
                                 chat_chunk = llm.ChatChunk(
-                                    request_id=getattr(chunk, 'id', ''),
+                                    id=getattr(chunk, 'id', ''),
                                     choices=choices
                                 )
                                 
