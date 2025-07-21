@@ -120,16 +120,47 @@ class CustomGroqLLMStream(llm.LLMStream):
         try:
             # 转换ChatContext为Groq API格式
             messages = []
-            for msg in self._chat_ctx.messages:
-                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+            
+            # 在 LiveKit Agents 1.1.7 中，ChatContext 可能不直接有 messages 属性
+            # 我们需要检查如何正确访问消息历史
+            try:
+                # 尝试获取消息历史 - 使用不同的方法
+                if hasattr(self._chat_ctx, 'messages'):
+                    # 如果有直接的 messages 属性
+                    chat_messages = self._chat_ctx.messages
+                elif hasattr(self._chat_ctx, 'items'):
+                    # 如果使用 items 属性
+                    chat_messages = self._chat_ctx.items
+                else:
+                    # 如果没有消息历史，创建基本的系统消息
+                    logger.warning("⚠️ ChatContext 没有找到消息历史，使用默认系统消息")
+                    chat_messages = []
+                
+                # 转换消息格式
+                for msg in chat_messages:
+                    if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                        messages.append({
+                            "role": msg.role,
+                            "content": msg.content
+                        })
+                
+                # 如果没有消息，添加一个基本的系统提示
+                if not messages:
                     messages.append({
-                        "role": msg.role,
-                        "content": msg.content
+                        "role": "system",
+                        "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
                     })
+                    
+            except Exception as ctx_error:
+                logger.warning(f"⚠️ 访问ChatContext失败: {ctx_error}, 使用默认消息")
+                messages = [{
+                    "role": "system",
+                    "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
+                }]
             
             logger.info(f"🧠 发送请求到Groq: {len(messages)} 条消息")
             if messages:
-                logger.info(f"🧠 用户输入: '{messages[-1]['content'][:100]}...'")
+                logger.info(f"🧠 消息内容: '{str(messages[-1]['content'])[:100]}...'")
             
             # 准备API调用参数
             api_params = {
@@ -167,20 +198,24 @@ class CustomGroqLLMStream(llm.LLMStream):
                             logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
                             
                             # 创建符合LiveKit格式的ChatChunk并推送事件
-                            chat_chunk = llm.ChatChunk(
-                                request_id=getattr(chunk, 'id', ''),
-                                choices=[
-                                    llm.Choice(
-                                        delta=llm.ChoiceDelta(
-                                            content=delta_content,
-                                            role="assistant"
+                            try:
+                                chat_chunk = llm.ChatChunk(
+                                    request_id=getattr(chunk, 'id', ''),
+                                    choices=[
+                                        llm.Choice(
+                                            delta=llm.ChoiceDelta(
+                                                content=delta_content,
+                                                role="assistant"
+                                            )
                                         )
-                                    )
-                                ]
-                            )
-                            
-                            # 使用父类的方法推送事件而不是yield
-                            await self.push_event(chat_chunk)
+                                    ]
+                                )
+                                
+                                # 使用父类的方法推送事件而不是yield
+                                await self.push_event(chat_chunk)
+                            except Exception as chunk_error:
+                                logger.error(f"❌ 创建ChatChunk失败: {chunk_error}")
+                                # 继续处理下一个chunk，不中断整个流程
             
             logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
             
