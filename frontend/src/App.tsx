@@ -111,7 +111,7 @@ export default function PrymeUI() {
       console.log(`正在获取房间 ${roomName} 的token...`);
       
       // 调用后端API获取token
-      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backend.onrender.com';
+      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed.onrender.com';
       const response = await fetch(`${tokenServerUrl}/api/token`, {
         method: 'POST',
         headers: {
@@ -156,18 +156,20 @@ export default function PrymeUI() {
       
       if (!isTranslating) {
         console.log('调用RPC: start_translation');
-        const result = await room.localParticipant.rpc(
-          agentParticipant.identity, 
-          'start_translation'
-        );
+        const result = await room.localParticipant.performRpc({
+          destinationIdentity: agentParticipant.identity,
+          method: 'start_translation',
+          payload: '',
+        });
         console.log('RPC结果:', result);
         setIsTranslating(true);
       } else {
         console.log('调用RPC: stop_translation');
-        const result = await room.localParticipant.rpc(
-          agentParticipant.identity, 
-          'stop_translation'
-        );
+        const result = await room.localParticipant.performRpc({
+          destinationIdentity: agentParticipant.identity,
+          method: 'stop_translation',
+          payload: '',
+        });
         console.log('RPC结果:', result);
         setIsTranslating(false);
       }
