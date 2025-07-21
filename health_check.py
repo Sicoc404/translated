@@ -134,13 +134,41 @@ class HealthChecker:
             if not audio_file:
                 return False
             
-            # 连接 WebSocket - 使用简化的连接方式
-            # 将认证信息放在URL中，避免header兼容性问题
-            auth_url = f"{full_url}&token={self.deepgram_api_key}"
-            
+            # 连接 WebSocket - 使用正确的认证方式
             logger.info(f"📡 连接到 Deepgram WebSocket...")
             
-            async with websockets.connect(auth_url) as websocket:
+            # Deepgram 需要在 Authorization header 中传递 token
+            headers = {"Authorization": f"Token {self.deepgram_api_key}"}
+            
+            # 尝试不同的 websockets 版本兼容方式
+            websocket = None
+            connection_error = None
+            
+            try:
+                # 方法1: 使用 extra_headers (新版本)
+                websocket = await websockets.connect(full_url, extra_headers=headers)
+                logger.debug("✅ 使用 extra_headers 连接成功")
+            except TypeError as e1:
+                logger.debug(f"⚠️ extra_headers 不支持: {e1}")
+                try:
+                    # 方法2: 使用 additional_headers (旧版本)
+                    websocket = await websockets.connect(full_url, additional_headers=headers)
+                    logger.debug("✅ 使用 additional_headers 连接成功")
+                except TypeError as e2:
+                    logger.debug(f"⚠️ additional_headers 不支持: {e2}")
+                    # 方法3: 使用 HTTP API 作为备用测试
+                    logger.warning("⚠️ WebSocket header 不支持，尝试 HTTP API 测试")
+                    return await self._test_deepgram_http_fallback()
+            except Exception as e:
+                connection_error = e
+                logger.warning(f"⚠️ WebSocket 连接失败: {e}，尝试 HTTP API 测试")
+                return await self._test_deepgram_http_fallback()
+            
+            if websocket is None:
+                logger.error("❌ 无法创建 WebSocket 连接")
+                return await self._test_deepgram_http_fallback()
+            
+            async with websocket:
                 logger.info("✅ WebSocket 连接成功")
                 
                 # 监听初始消息
@@ -226,6 +254,63 @@ class HealthChecker:
             logger.error(f"❌ Deepgram STT 测试失败: {e}")
             import traceback
             logger.error(f"错误详情:\n{traceback.format_exc()}")
+            return False
+
+    async def _test_deepgram_http_fallback(self) -> bool:
+        """使用 HTTP API 测试 Deepgram（WebSocket 备用方案）"""
+        logger.info("🔄 使用 Deepgram HTTP API 进行备用测试")
+        
+        try:
+            # 创建简单的测试音频
+            audio_file = self.create_test_audio("test_http_audio.wav", 2.0)
+            if not audio_file:
+                return False
+            
+            # 使用 Deepgram HTTP API
+            url = "https://api.deepgram.com/v1/listen"
+            headers = {
+                "Authorization": f"Token {self.deepgram_api_key}",
+                "Content-Type": "audio/wav"
+            }
+            
+            params = {
+                "model": "nova-2",
+                "language": "zh",
+                "smart_format": "true"
+            }
+            
+            logger.info("📡 调用 Deepgram HTTP API...")
+            
+            with open(audio_file, 'rb') as f:
+                response = requests.post(url, headers=headers, params=params, data=f)
+            
+            # 清理测试文件
+            if os.path.exists(audio_file):
+                os.remove(audio_file)
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info("✅ Deepgram HTTP API 连接成功")
+                
+                # 检查是否有转写结果
+                if "results" in result and "channels" in result["results"]:
+                    channels = result["results"]["channels"]
+                    if channels and len(channels) > 0:
+                        alternatives = channels[0].get("alternatives", [])
+                        if alternatives and len(alternatives) > 0:
+                            transcript = alternatives[0].get("transcript", "")
+                            confidence = alternatives[0].get("confidence", 0)
+                            logger.info(f"🎯 HTTP API 转写结果: '{transcript}' (置信度: {confidence:.2f})")
+                
+                logger.info("✅ Deepgram HTTP API 测试成功")
+                return True
+            else:
+                logger.error(f"❌ Deepgram HTTP API 测试失败: HTTP {response.status_code}")
+                logger.error(f"响应: {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Deepgram HTTP API 备用测试失败: {e}")
             return False
 
     async def test_groq_llm(self) -> bool:
