@@ -190,16 +190,21 @@ class CustomGroqLLMStream(llm.LLMStream):
                 # 转换消息格式 - 确保content始终是字符串
                 for msg in chat_messages:
                     if hasattr(msg, 'role') and hasattr(msg, 'content'):
-                        # 确保content是字符串类型
+                        # 正确处理content格式
                         content = msg.content
-                        if not isinstance(content, str):
+                        
+                        # 如果content是列表，使用join合并
+                        if isinstance(content, list):
+                            content = ''.join(str(item) for item in content if item is not None)
+                        elif not isinstance(content, str):
+                            # 如果不是字符串也不是列表，转换为字符串
                             content = str(content) if content is not None else ""
                         
                         # 确保content不为空
-                        if content.strip():
+                        if content and content.strip():
                             messages.append({
                                 "role": str(msg.role),  # 确保role也是字符串
-                                "content": content
+                                "content": content.strip()  # 去除前后空格
                             })
                 
                 # 如果没有消息，添加一个基本的系统提示
@@ -223,14 +228,21 @@ class CustomGroqLLMStream(llm.LLMStream):
                     # 验证每个消息的格式
                     if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
                         role = str(msg['role'])
-                        content = str(msg['content']) if msg['content'] is not None else ""
+                        content = msg['content']
+                        
+                        # 正确处理content格式（二次验证）
+                        if isinstance(content, list):
+                            content = ''.join(str(item) for item in content if item is not None)
+                        elif not isinstance(content, str):
+                            content = str(content) if content is not None else ""
                         
                         # 确保content不为空字符串
-                        if content.strip():
+                        if content and content.strip():
                             validated_messages.append({
                                 "role": role,
-                                "content": content
+                                "content": content.strip()
                             })
+                            logger.debug(f"✅ 消息 {i} 验证通过: role={role}, content_length={len(content)} chars")
                         else:
                             logger.warning(f"⚠️ 消息 {i} 的content为空，跳过")
                     else:
@@ -249,10 +261,17 @@ class CustomGroqLLMStream(llm.LLMStream):
             
             logger.info(f"🧠 发送请求到Groq: {len(messages)} 条消息")
             if messages:
-                logger.info(f"🧠 最后消息内容: '{str(messages[-1]['content'])[:100]}...'")
-                # 调试：打印所有消息的类型和格式
+                logger.info(f"🧠 最后消息内容: '{messages[-1]['content'][:100]}...'")
+                # 调试：打印所有消息的详细格式
                 for i, msg in enumerate(messages):
-                    logger.debug(f"🔍 消息 {i}: role={type(msg.get('role', None))}({msg.get('role', None)}), content={type(msg.get('content', None))}({len(str(msg.get('content', '')))} chars)")
+                    content_preview = msg.get('content', '')[:50] + ('...' if len(msg.get('content', '')) > 50 else '')
+                    logger.info(f"🔍 消息 {i}: role={msg.get('role', None)}, content=\"{content_preview}\" ({len(msg.get('content', ''))} chars)")
+                    
+                # 特别检查用户消息的格式
+                user_messages = [msg for msg in messages if msg.get('role') == 'user']
+                if user_messages:
+                    last_user_msg = user_messages[-1]
+                    logger.info(f"🎯 最后用户消息完整内容: \"{last_user_msg['content']}\"")
             
             # 准备API调用参数
             api_params = {
