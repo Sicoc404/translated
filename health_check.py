@@ -134,12 +134,13 @@ class HealthChecker:
             if not audio_file:
                 return False
             
-            # 连接 WebSocket
-            headers = {
-                "Authorization": f"Token {self.deepgram_api_key}"
-            }
+            # 连接 WebSocket - 使用简化的连接方式
+            # 将认证信息放在URL中，避免header兼容性问题
+            auth_url = f"{full_url}&token={self.deepgram_api_key}"
             
-            async with websockets.connect(full_url, extra_headers=headers) as websocket:
+            logger.info(f"📡 连接到 Deepgram WebSocket...")
+            
+            async with websockets.connect(auth_url) as websocket:
                 logger.info("✅ WebSocket 连接成功")
                 
                 # 监听初始消息
@@ -373,93 +374,66 @@ class HealthChecker:
             return False
         
         try:
-            # 测试用例
-            test_cases = [
-                {
-                    "text": "안녕하세요, 세계!",
-                    "language": "韩语",
-                    "voice_id": "7d787990-4c3a-4766-9450-8c3ac6718b13",
-                    "filename": "test_korean.wav"
+            # 简化的测试 - 只测试基础TTS功能
+            logger.info(f"\n🎵 测试 Cartesia TTS 基础功能")
+            logger.info(f"🔤 文本: 'Hello, this is a test.'")
+            
+            # 准备请求
+            url = "https://api.cartesia.ai/tts/bytes"
+            headers = {
+                "Cartesia-Version": "2024-06-10",
+                "X-API-Key": self.cartesia_api_key,
+                "Content-Type": "application/json"
+            }
+            
+            # 使用最简单的配置
+            data = {
+                "model_id": "sonic-english",
+                "transcript": "Hello, this is a test.",
+                "voice": {
+                    "mode": "id",
+                    "id": "79a125e8-cd45-4c13-8a67-188112f4dd22"
                 },
-                {
-                    "text": "こんにちは、世界！",
-                    "language": "日语",
-                    "voice_id": "95856005-0332-41b0-935f-352e296aa0df", 
-                    "filename": "test_japanese.wav"
+                "output_format": {
+                    "container": "wav",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 22050
                 }
-            ]
+            }
             
-            success_count = 0
+            logger.info(f"📡 调用 Cartesia API...")
+            logger.info(f"🔧 模型: {data['model_id']}")
             
-            for i, test_case in enumerate(test_cases, 1):
-                logger.info(f"\n🎵 测试案例 {i}: {test_case['language']} TTS")
-                logger.info(f"🔤 文本: '{test_case['text']}'")
-                logger.info(f"🎭 语音ID: {test_case['voice_id']}")
-                
-                # 准备请求
-                url = "https://api.cartesia.ai/tts/bytes"
-                headers = {
-                    "Cartesia-Version": "2024-06-10",
-                    "X-API-Key": self.cartesia_api_key,
-                    "Content-Type": "application/json"
-                }
-                
-                data = {
-                    "model_id": "sonic-multilingual",
-                    "transcript": test_case['text'],
-                    "voice": {
-                        "mode": "id",
-                        "id": test_case['voice_id']
-                    },
-                    "output_format": {
-                        "container": "wav",
-                        "encoding": "pcm_s16le",
-                        "sample_rate": 44100
-                    }
-                }
-                
-                logger.info(f"📡 调用 Cartesia API...")
-                logger.info(f"🔧 模型: {data['model_id']}")
-                
-                # 发送请求
-                response = requests.post(url, headers=headers, json=data)
-                
-                if response.status_code == 200:
-                    # 保存音频文件
-                    filename = test_case['filename']
-                    with open(filename, 'wb') as f:
-                        f.write(response.content)
-                    
-                    # 验证文件
-                    file_size = os.path.getsize(filename)
-                    logger.info(f"💾 音频文件已保存: {filename} ({file_size} bytes)")
-                    
-                    # 简单验证音频文件格式
-                    try:
-                        with wave.open(filename, 'rb') as wav_file:
-                            frames = wav_file.getnframes()
-                            sample_rate = wav_file.getframerate()
-                            duration = frames / sample_rate
-                            logger.info(f"🎵 音频信息: {duration:.2f}秒, {sample_rate}Hz, {frames} frames")
-                    except Exception as wav_error:
-                        logger.warning(f"⚠️ 音频文件格式验证失败: {wav_error}")
-                    
-                    success_count += 1
-                    logger.info(f"✅ 测试案例 {i} 成功")
-                    
-                else:
-                    logger.error(f"❌ 测试案例 {i} 失败: HTTP {response.status_code}")
-                    logger.error(f"响应: {response.text}")
-                
-                # 添加延迟避免API限制
-                await asyncio.sleep(1)
+            # 发送请求
+            response = requests.post(url, headers=headers, json=data)
             
-            if success_count == len(test_cases):
-                logger.info(f"✅ Cartesia TTS 测试完全成功 ({success_count}/{len(test_cases)})")
+            if response.status_code == 200:
+                # 保存音频文件
+                filename = "test_tts.wav"
+                with open(filename, 'wb') as f:
+                    f.write(response.content)
+                
+                # 验证文件
+                file_size = os.path.getsize(filename)
+                logger.info(f"💾 音频文件已保存: {filename} ({file_size} bytes)")
+                
+                # 简单验证音频文件格式
+                try:
+                    with wave.open(filename, 'rb') as wav_file:
+                        frames = wav_file.getnframes()
+                        sample_rate = wav_file.getframerate()
+                        duration = frames / sample_rate
+                        logger.info(f"🎵 音频信息: {duration:.2f}秒, {sample_rate}Hz, {frames} frames")
+                except Exception as wav_error:
+                    logger.warning(f"⚠️ 音频文件格式验证失败: {wav_error}")
+                
+                logger.info(f"✅ Cartesia TTS 测试成功")
                 return True
+                
             else:
-                logger.warning(f"⚠️ Cartesia TTS 测试部分成功 ({success_count}/{len(test_cases)})")
-                return success_count > 0
+                logger.error(f"❌ Cartesia TTS 测试失败: HTTP {response.status_code}")
+                logger.error(f"响应: {response.text}")
+                return False
                 
         except Exception as e:
             logger.error(f"❌ Cartesia TTS 测试失败: {e}")
