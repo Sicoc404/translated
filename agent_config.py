@@ -136,13 +136,20 @@ class CustomGroqLLMStream(llm.LLMStream):
                     logger.warning("⚠️ ChatContext 没有找到消息历史，使用默认系统消息")
                     chat_messages = []
                 
-                # 转换消息格式
+                # 转换消息格式 - 确保content始终是字符串
                 for msg in chat_messages:
                     if hasattr(msg, 'role') and hasattr(msg, 'content'):
-                        messages.append({
-                            "role": msg.role,
-                            "content": msg.content
-                        })
+                        # 确保content是字符串类型
+                        content = msg.content
+                        if not isinstance(content, str):
+                            content = str(content) if content is not None else ""
+                        
+                        # 确保content不为空
+                        if content.strip():
+                            messages.append({
+                                "role": str(msg.role),  # 确保role也是字符串
+                                "content": content
+                            })
                 
                 # 如果没有消息，添加一个基本的系统提示
                 if not messages:
@@ -157,10 +164,44 @@ class CustomGroqLLMStream(llm.LLMStream):
                     "role": "system",
                     "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
                 }]
+                
+            # 验证所有消息格式 - 确保符合Groq API要求
+            validated_messages = []
+            for i, msg in enumerate(messages):
+                try:
+                    # 验证每个消息的格式
+                    if isinstance(msg, dict) and 'role' in msg and 'content' in msg:
+                        role = str(msg['role'])
+                        content = str(msg['content']) if msg['content'] is not None else ""
+                        
+                        # 确保content不为空字符串
+                        if content.strip():
+                            validated_messages.append({
+                                "role": role,
+                                "content": content
+                            })
+                        else:
+                            logger.warning(f"⚠️ 消息 {i} 的content为空，跳过")
+                    else:
+                        logger.warning(f"⚠️ 消息 {i} 格式无效，跳过: {msg}")
+                except Exception as msg_error:
+                    logger.error(f"❌ 验证消息 {i} 时出错: {msg_error}")
+                    
+            # 如果验证后没有有效消息，使用默认消息
+            if not validated_messages:
+                validated_messages = [{
+                    "role": "system",
+                    "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
+                }]
+                
+            messages = validated_messages
             
             logger.info(f"🧠 发送请求到Groq: {len(messages)} 条消息")
             if messages:
-                logger.info(f"🧠 消息内容: '{str(messages[-1]['content'])[:100]}...'")
+                logger.info(f"🧠 最后消息内容: '{str(messages[-1]['content'])[:100]}...'")
+                # 调试：打印所有消息的类型和格式
+                for i, msg in enumerate(messages):
+                    logger.debug(f"🔍 消息 {i}: role={type(msg.get('role', None))}({msg.get('role', None)}), content={type(msg.get('content', None))}({len(str(msg.get('content', '')))} chars)")
             
             # 准备API调用参数
             api_params = {
@@ -170,6 +211,9 @@ class CustomGroqLLMStream(llm.LLMStream):
                 "max_tokens": 1000,
                 "stream": True,  # 启用流式模式
             }
+            
+            # 调试：确保API参数格式正确
+            logger.debug(f"🔍 API参数: model={api_params['model']}, messages_count={len(api_params['messages'])}, temp={api_params['temperature']}")
             
             # 添加tools支持（如果提供）
             if self._tools:
