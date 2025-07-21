@@ -112,10 +112,10 @@ class CustomGroqLLMStream(llm.LLMStream):
         self._tool_choice = tool_choice
         self._conn_options = conn_options
         
-    async def _run(self) -> AsyncIterator[llm.ChatChunk]:
+    async def _run(self) -> None:
         """
         实现LiveKit Agents 1.1.7要求的_run抽象方法
-        返回ChatChunk异步生成器用于流式响应
+        使用普通async def函数，不使用yield，通过父类方法处理响应
         """
         try:
             # 转换ChatContext为Groq API格式
@@ -166,8 +166,7 @@ class CustomGroqLLMStream(llm.LLMStream):
                         if delta_content:
                             logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
                             
-                            # 创建符合LiveKit格式的ChatChunk
-                            # 使用正确的ChatChunk构造方式
+                            # 创建符合LiveKit格式的ChatChunk并推送事件
                             chat_chunk = llm.ChatChunk(
                                 request_id=getattr(chunk, 'id', ''),
                                 choices=[
@@ -179,7 +178,9 @@ class CustomGroqLLMStream(llm.LLMStream):
                                     )
                                 ]
                             )
-                            yield chat_chunk
+                            
+                            # 使用父类的方法推送事件而不是yield
+                            await self.push_event(chat_chunk)
             
             logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
             
