@@ -82,6 +82,7 @@ class CustomGroqLLM(llm.LLM):
 class CustomGroqLLMStream(llm.LLMStream):
     """
     自定义Groq LLM流实现
+    实现LiveKit Agents 1.1.7 LLMStream抽象方法
     """
     
     def __init__(
@@ -93,17 +94,17 @@ class CustomGroqLLMStream(llm.LLMStream):
         tool_choice: str | None = None,
         temperature: float = 0.7,
     ):
-        super().__init__(chat_ctx=chat_ctx)  # 移除fnc_ctx参数
+        super().__init__(chat_ctx=chat_ctx)
         self._client = client
         self._model = model
         self._temperature = temperature
         self._tools = tools
         self._tool_choice = tool_choice
         
-    async def _main_task(self) -> None:
+    async def _run(self) -> AsyncIterator[llm.ChatChunk]:
         """
-        主要的LLM处理任务
-        支持LiveKit Agents 1.1.7的完整功能
+        实现LiveKit Agents 1.1.7要求的_run抽象方法
+        返回ChatChunk异步生成器用于流式响应
         """
         try:
             # 转换ChatContext为Groq API格式
@@ -125,7 +126,7 @@ class CustomGroqLLMStream(llm.LLMStream):
                 "messages": messages,
                 "temperature": self._temperature,
                 "max_tokens": 1000,
-                "stream": False,  # 使用非流式模式
+                "stream": True,  # 启用流式模式
             }
             
             # 添加tools支持（如果提供）
@@ -137,30 +138,39 @@ class CustomGroqLLMStream(llm.LLMStream):
             if self._tool_choice:
                 logger.info(f"🎯 工具选择: {self._tool_choice}")
             
-            # 调用官方Groq客户端
-            logger.info(f"📡 调用Groq API - 模型: {self._model}")
-            response = self._client.chat.completions.create(**api_params)
+            # 调用官方Groq客户端流式API
+            logger.info(f"📡 调用Groq流式API - 模型: {self._model}")
+            stream = self._client.chat.completions.create(**api_params)
             
-            # 获取回复内容
-            content = response.choices[0].message.content
-            logger.info(f"🌍 Groq翻译结果: '{content}'")
+            # 处理流式响应
+            full_content = ""
+            for chunk in stream:
+                if chunk.choices:
+                    choice = chunk.choices[0]
+                    if hasattr(choice, 'delta') and choice.delta:
+                        # 处理流式delta内容
+                        delta_content = choice.delta.content or ""
+                        full_content += delta_content
+                        
+                        if delta_content:
+                            logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
+                            
+                            # 创建ChatChunk并yield
+                            chat_chunk = llm.ChatChunk(
+                                id=chunk.id,
+                                choices=[{
+                                    "delta": {
+                                        "content": delta_content,
+                                        "role": "assistant"
+                                    }
+                                }]
+                            )
+                            yield chat_chunk
             
-            # 创建回复消息并发送
-            reply_msg = llm.ChatMessage.create(
-                text=content,
-                role="assistant"
-            )
-            
-            # 按照LiveKit 1.1.7标准发送事件
-            self._event_ch.send_nowait(
-                llm.LLMEvent(type="content_part_added", content_part=reply_msg)
-            )
-            self._event_ch.send_nowait(
-                llm.LLMEvent(type="content_done")
-            )
+            logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
             
         except Exception as e:
-            logger.error(f"❌ Groq LLM处理失败: {e}")
+            logger.error(f"❌ Groq LLM流式处理失败: {e}")
             import traceback
             logger.error(f"错误详情:\n{traceback.format_exc()}")
             raise
