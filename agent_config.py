@@ -12,6 +12,7 @@ from livekit.agents import Agent, AgentSession, llm
 from livekit.plugins import deepgram, cartesia, silero
 from typing import Dict, Any, Tuple, AsyncIterator
 from groq import Groq
+import asyncio
 
 # 配置日志
 logger = logging.getLogger("agent-config")
@@ -155,15 +156,18 @@ class CustomGroqLLMStream(llm.LLMStream):
                         if delta_content:
                             logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
                             
-                            # 创建ChatChunk并yield
+                            # 创建符合LiveKit格式的ChatChunk
+                            # 使用正确的ChatChunk构造方式
                             chat_chunk = llm.ChatChunk(
-                                id=chunk.id,
-                                choices=[{
-                                    "delta": {
-                                        "content": delta_content,
-                                        "role": "assistant"
-                                    }
-                                }]
+                                request_id=getattr(chunk, 'id', ''),
+                                choices=[
+                                    llm.Choice(
+                                        delta=llm.ChoiceDelta(
+                                            content=delta_content,
+                                            role="assistant"
+                                        )
+                                    )
+                                ]
                             )
                             yield chat_chunk
             
