@@ -243,16 +243,21 @@ class CustomGroqLLMStream(llm.LLMStream):
                             
                             # 创建符合LiveKit格式的ChatChunk并推送事件
                             try:
+                                # 使用字典格式构造choices，符合OpenAI/Groq风格的响应格式
+                                choices = [
+                                    {
+                                        "delta": {
+                                            "content": delta_content,
+                                            "role": "assistant"
+                                        },
+                                        "index": 0,
+                                        "finish_reason": None
+                                    }
+                                ]
+                                
                                 chat_chunk = llm.ChatChunk(
                                     request_id=getattr(chunk, 'id', ''),
-                                    choices=[
-                                        llm.Choice(
-                                            delta=llm.ChoiceDelta(
-                                                content=delta_content,
-                                                role="assistant"
-                                            )
-                                        )
-                                    ]
+                                    choices=choices
                                 )
                                 
                                 # 使用父类的方法推送事件而不是yield
