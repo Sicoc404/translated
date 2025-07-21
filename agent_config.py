@@ -79,6 +79,7 @@ class CustomGroqLLM(llm.LLM):
             tools=tools,
             tool_choice=tool_choice,
             temperature=temperature or 0.7,
+            conn_options=conn_options,
         )
 
 class CustomGroqLLMStream(llm.LLMStream):
@@ -96,13 +97,20 @@ class CustomGroqLLMStream(llm.LLMStream):
         tools: list | None = None,
         tool_choice: str | None = None,
         temperature: float = 0.7,
+        conn_options: dict | None = None,
     ):
-        super().__init__(llm=llm_instance, chat_ctx=chat_ctx)
+        super().__init__(
+            llm=llm_instance, 
+            chat_ctx=chat_ctx,
+            tools=tools or [],
+            conn_options=conn_options or {}
+        )
         self._client = client
         self._model = model
         self._temperature = temperature
         self._tools = tools
         self._tool_choice = tool_choice
+        self._conn_options = conn_options
         
     async def _run(self) -> AsyncIterator[llm.ChatChunk]:
         """
