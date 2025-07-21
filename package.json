@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@livekit/components-react": "^2.5.0",
-    "livekit-client": "^2.15.3",
+    "@livekit/components-react": "^1.5.0",
+    "livekit-client": "^1.15.0",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
