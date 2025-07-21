@@ -72,6 +72,7 @@ class CustomGroqLLM(llm.LLM):
         logger.info(f"🧠 Groq chat调用 - tools: {len(tools) if tools else 0}, tool_choice: {tool_choice}")
         
         return CustomGroqLLMStream(
+            llm_instance=self,
             client=self._client,
             model=self._model,
             chat_ctx=chat_ctx,
@@ -88,6 +89,7 @@ class CustomGroqLLMStream(llm.LLMStream):
     
     def __init__(
         self,
+        llm_instance: llm.LLM,
         client: Groq,
         model: str,
         chat_ctx: llm.ChatContext,
@@ -95,7 +97,7 @@ class CustomGroqLLMStream(llm.LLMStream):
         tool_choice: str | None = None,
         temperature: float = 0.7,
     ):
-        super().__init__(chat_ctx=chat_ctx)
+        super().__init__(llm=llm_instance, chat_ctx=chat_ctx)
         self._client = client
         self._model = model
         self._temperature = temperature
