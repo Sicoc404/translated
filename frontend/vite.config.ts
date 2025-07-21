@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 export default defineConfig({
+  root: ".",
   plugins: [react()],
   server: {
     host: true,  // 绑定到 0.0.0.0
@@ -24,6 +25,10 @@ export default defineConfig({
     assetsInlineLimit: 4096,
     // 生成sourcemap以便调试
     sourcemap: true,
+    // 明确指定入口文件
+    rollupOptions: {
+      input: resolve(__dirname, "index.html"),
+    },
   },
   // 确保正确解析路径别名
   resolve: {
@@ -31,6 +36,6 @@ export default defineConfig({
       "@": resolve(__dirname, "./src"),
     },
   },
-  // 确保正确处理静态资源
-  publicDir: "public",
+  // 禁用 publicDir，因为我们没有 public 目录
+  publicDir: false,
 });
