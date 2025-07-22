@@ -198,6 +198,48 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
         )
         
+        # 添加语音处理事件监听
+        @session.on("user_speech_committed")
+        async def on_user_speech(event):
+            """处理用户语音转写结果"""
+            transcript = event.alternatives[0].text if event.alternatives else ""
+            confidence = event.alternatives[0].confidence if event.alternatives else 0.0
+            logger.info(f"[LOG][speech-in] 用户语音转写: '{transcript}' (置信度: {confidence:.2f})")
+            
+            # 发送转写结果到前端
+            try:
+                transcript_data = json.dumps({
+                    'type': 'transcript',
+                    'text': transcript,
+                    'confidence': confidence,
+                    'language': 'zh',
+                    'timestamp': asyncio.get_event_loop().time()
+                }).encode('utf-8')
+                await ctx.room.local_participant.publish_data(transcript_data)
+                logger.info(f"[LOG][subtitles-send] 转写结果已发送: {transcript}")
+            except Exception as e:
+                logger.error(f"❌ 发送转写结果失败: {e}")
+        
+        @session.on("agent_speech_committed")
+        async def on_agent_speech(event):
+            """处理Agent语音合成结果"""
+            translation = event.alternatives[0].text if event.alternatives else ""
+            logger.info(f"[LOG][speech-out] Agent翻译输出: '{translation}'")
+            
+            # 发送翻译结果到前端
+            try:
+                translation_data = json.dumps({
+                    'type': 'translation',
+                    'text': translation,
+                    'source_language': 'zh',
+                    'target_language': target_language,
+                    'timestamp': asyncio.get_event_loop().time()
+                }).encode('utf-8')
+                await ctx.room.local_participant.publish_data(translation_data)
+                logger.info(f"[LOG][subtitles-send] 翻译结果已发送: {translation}")
+            except Exception as e:
+                logger.error(f"❌ 发送翻译结果失败: {e}")
+        
         logger.info(f"✅ {language_name} 翻译Agent配置完成:")
         logger.info(f"  🎤 VAD: {type(vad).__name__}")
         logger.info(f"  🗣️ STT: {type(stt).__name__} (中文识别)")
@@ -258,10 +300,43 @@ async def entrypoint(ctx: JobContext):
         
         # 启动Agent会话
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
+        
+        # 启动会话并等待连接
         await session.start(agent=agent, room=ctx.room)
+        
+        # 确保Agent正在监听音频
+        logger.info(f"🎧 Agent已启动，正在监听音频输入...")
+        logger.info(f"🔍 房间参与者: {list(ctx.room.participants.keys())}")
+        
+        # 检查是否有音频轨道
+        for participant in ctx.room.participants.values():
+            logger.info(f"👤 参与者: {participant.identity}")
+            for track_pub in participant.tracks.values():
+                if track_pub.track and track_pub.track.kind == "audio":
+                    logger.info(f"🎤 发现音频轨道: {track_pub.track.sid}")
+        
+        # 等待并保持会话活跃
+        logger.info(f"⏳ {language_name} 翻译Agent运行中，等待语音输入...")
         
         logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
         logger.info(f"🎧 等待用户语音输入进行实时翻译...")
+        
+        # 添加音频轨道监听
+        def on_track_subscribed(track, publication, participant):
+            logger.info(f"[LOG][audio-in] 订阅到轨道: {track.kind} from {participant.identity}")
+            if track.kind == "audio":
+                logger.info(f"[LOG][audio-in] 开始监听音频输入...")
+        
+        ctx.room.on("track_subscribed", on_track_subscribed)
+        
+        # 监听本地参与者的轨道
+        for participant in ctx.room.participants.values():
+            logger.info(f"[LOG][participants] 检查参与者: {participant.identity}")
+            for track_pub in participant.tracks.values():
+                if track_pub.track:
+                    logger.info(f"[LOG][audio-in] 发现现有轨道: {track_pub.track.kind}")
+                    if track_pub.track.kind == "audio":
+                        logger.info(f"[LOG][audio-in] 音频轨道已就绪")
         
         # 发送欢迎消息到数据通道
         try:
