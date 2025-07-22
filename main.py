@@ -197,10 +197,9 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"  🧠 LLM: {type(llm).__name__} (Groq翻译)")
         logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
         
-        # 正确的事件监听方式 - 使用ctx.room.on()
-        @ctx.room.on("data_received")
-        async def handle_data_received(data: bytes, participant):
-            """处理从客户端接收的数据消息"""
+        # 正确的事件监听方式 - 使用同步回调 + asyncio.create_task
+        async def handle_data_received_async(data: bytes, participant):
+            """异步处理从客户端接收的数据消息"""
             try:
                 message = data.decode('utf-8')
                 logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
@@ -241,6 +240,11 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
         
+        @ctx.room.on("data_received")
+        def handle_data_received(data: bytes, participant):
+            """同步回调包装器，使用asyncio.create_task处理异步逻辑"""
+            asyncio.create_task(handle_data_received_async(data, participant))
+        
         @ctx.room.on("track_subscribed")
         def on_track_subscribed(track, publication, participant):
             """监听音频轨道订阅"""
@@ -259,10 +263,9 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
         )
         
-        # 添加AgentSession事件监听
-        @session.on("user_speech_committed")
-        async def on_user_speech(event):
-            """处理用户语音转写结果"""
+        # 添加AgentSession事件监听 - 使用同步回调
+        async def on_user_speech_async(event):
+            """异步处理用户语音转写结果"""
             transcript = event.alternatives[0].text if event.alternatives else ""
             confidence = event.alternatives[0].confidence if event.alternatives else 0.0
             logger.info(f"[LOG][speech-in] 用户语音转写: '{transcript}' (置信度: {confidence:.2f})")
@@ -281,9 +284,13 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.error(f"❌ 发送转写结果失败: {e}")
         
-        @session.on("agent_speech_committed")
-        async def on_agent_speech(event):
-            """处理Agent语音合成结果"""
+        @session.on("user_speech_committed")
+        def on_user_speech(event):
+            """同步回调包装器"""
+            asyncio.create_task(on_user_speech_async(event))
+        
+        async def on_agent_speech_async(event):
+            """异步处理Agent语音合成结果"""
             translation = event.alternatives[0].text if event.alternatives else ""
             logger.info(f"[LOG][speech-out] Agent翻译输出: '{translation}'")
             
@@ -300,6 +307,11 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"[LOG][subtitles-send] 翻译结果已发送: {translation}")
             except Exception as e:
                 logger.error(f"❌ 发送翻译结果失败: {e}")
+        
+        @session.on("agent_speech_committed")
+        def on_agent_speech(event):
+            """同步回调包装器"""
+            asyncio.create_task(on_agent_speech_async(event))
         
         # 启动Agent会话 - 正确传入agent和room参数
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
