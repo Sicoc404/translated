@@ -24,9 +24,9 @@ export default defineConfig({
     assetsInlineLimit: 4096,
     // 生成sourcemap以便调试
     sourcemap: true,
-    // 明确指定入口文件
+    // 明确指定入口文件（相对于 frontend 目录）
     rollupOptions: {
-      input: resolve(__dirname, "index.html"),
+      input: "./index.html",
     },
   },
   // 确保正确解析路径别名
