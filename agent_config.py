@@ -16,6 +16,9 @@ from typing import Dict, Any, Tuple, AsyncIterator
 from groq import Groq
 import asyncio
 
+# 配置日志
+logger = logging.getLogger("agent-config")
+
 # 导入调试功能
 try:
     from debug_integration import (
@@ -39,9 +42,6 @@ except ImportError:
         def decorator(func): return func
         return decorator
     logger.warning("⚠️ 调试功能未启用（debug_integration.py 不存在）")
-
-# 配置日志
-logger = logging.getLogger("agent-config")
 
 # 语言配置
 LANGUAGE_CONFIG = {
