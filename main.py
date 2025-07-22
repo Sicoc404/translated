@@ -301,22 +301,12 @@ async def entrypoint(ctx: JobContext):
         # 启动Agent会话
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
         
-        # 启动会话并等待连接
+        # 确保Agent启用语音处理
+        agent.enable_voice_activity_detection = True
+        agent.enable_speech_to_text = True
+        agent.enable_text_to_speech = True
+        
         await session.start(agent=agent, room=ctx.room)
-        
-        # 确保Agent正在监听音频
-        logger.info(f"🎧 Agent已启动，正在监听音频输入...")
-        logger.info(f"🔍 房间参与者: {list(ctx.room.participants.keys())}")
-        
-        # 检查是否有音频轨道
-        for participant in ctx.room.participants.values():
-            logger.info(f"👤 参与者: {participant.identity}")
-            for track_pub in participant.tracks.values():
-                if track_pub.track and track_pub.track.kind == "audio":
-                    logger.info(f"🎤 发现音频轨道: {track_pub.track.sid}")
-        
-        # 等待并保持会话活跃
-        logger.info(f"⏳ {language_name} 翻译Agent运行中，等待语音输入...")
         
         logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
         logger.info(f"🎧 等待用户语音输入进行实时翻译...")
