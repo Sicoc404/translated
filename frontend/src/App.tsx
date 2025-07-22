@@ -131,7 +131,7 @@ export default function PrymeUI() {
       console.log(`正在获取房间 ${roomName} 的token...`);
       
       // 调用后端API获取token
-      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed-qmuq.onrender.com';
+      const tokenServerUrl = (import.meta as any).env.VITE_TOKEN_SERVER_URL || 'https://translated-backed-qmuq.onrender.com';
       const response = await fetch(`${tokenServerUrl}/api/token`, {
         method: 'POST',
         headers: {
@@ -166,48 +166,87 @@ export default function PrymeUI() {
   
   // 控制翻译开始/停止
   const toggleTranslation = async () => {
-    if (!isConnected || !roomRef.current || !agentParticipant) {
-      console.error('房间未连接或未找到翻译代理');
+    if (!isConnected || !roomRef.current) {
+      console.error('房间未连接');
+      alert('请先连接到房间');
       return;
     }
     
     try {
       const room = roomRef.current;
       
+      // 检查麦克风权限和状态
+      const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
+      if (!micTrack || !micTrack.track || micTrack.track.isMuted) {
+        console.warn('⚠️ 麦克风未启用或被静音');
+        alert('请确保麦克风已启用且未被静音');
+        return;
+      }
+      
+      console.log('🎤 麦克风状态检查通过:', {
+        hasTrack: !!micTrack,
+        enabled: !micTrack.track.isMuted,
+        trackSid: micTrack.trackSid
+      });
+      
       if (!isTranslating) {
-        console.log('[LOG][rpc-call] 发送翻译开始指令到 Agent');
-        const encoder = new TextEncoder();
-        const data = encoder.encode(JSON.stringify({
+        console.log('[LOG][rpc-call] 开始翻译模式');
+        
+        // 简化数据发送，不指定特定的 Agent 接收者
+        const controlMessage = {
           type: 'translation_control',
           action: 'start',
-          timestamp: Date.now()
-        }));
+          timestamp: Date.now(),
+          room: room.name
+        };
         
-        await room.localParticipant.publishData(data, {
-          reliable: true,
-          destinationIdentities: [agentParticipant.identity]
-        });
-        console.log('[LOG][rpc-call] 翻译开始指令已发送');
-        setIsTranslating(true);
-      } else {
-        console.log('[LOG][rpc-call] 发送翻译停止指令到 Agent');
         const encoder = new TextEncoder();
-        const data = encoder.encode(JSON.stringify({
+        const data = encoder.encode(JSON.stringify(controlMessage));
+        
+        // 广播数据到房间内所有参与者
+        await room.localParticipant.publishData(data, {
+          reliable: true
+        });
+        
+        console.log('[LOG][rpc-call] 翻译开始指令已广播');
+        setIsTranslating(true);
+        setSubtitle('翻译模式已启动，请开始说话...');
+        
+      } else {
+        console.log('[LOG][rpc-call] 停止翻译模式');
+        
+        const controlMessage = {
           type: 'translation_control',
           action: 'stop',
-          timestamp: Date.now()
-        }));
+          timestamp: Date.now(),
+          room: room.name
+        };
+        
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify(controlMessage));
         
         await room.localParticipant.publishData(data, {
-          reliable: true,
-          destinationIdentities: [agentParticipant.identity]
+          reliable: true
         });
-        console.log('[LOG][rpc-call] 翻译停止指令已发送');
+        
+        console.log('[LOG][rpc-call] 翻译停止指令已广播');
         setIsTranslating(false);
+        setSubtitle('翻译模式已停止');
       }
     } catch (error) {
       console.error('控制翻译失败:', error);
-      alert('控制翻译失败，请稍后重试');
+      
+      // 提供更详细的错误信息
+      let errorMessage = '控制翻译失败';
+      if (error.message) {
+        errorMessage += ': ' + error.message;
+      }
+      
+      // 重置状态
+      setIsTranslating(false);
+      setSubtitle('翻译控制失败，请重试');
+      
+      alert(errorMessage + '。请检查网络连接并重试。');
     }
   };
 
@@ -922,7 +961,7 @@ export default function PrymeUI() {
                 }}>
                   <button 
                     onClick={toggleTranslation}
-                    disabled={!isConnected || !agentParticipant}
+                    disabled={!isConnected}
                     style={{
                       position: 'relative',
                       padding: '16px 32px',
@@ -933,12 +972,12 @@ export default function PrymeUI() {
                       fontWeight: '600',
                       boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
                       border: 'none',
-                      cursor: (!isConnected || !agentParticipant) ? 'not-allowed' : 'pointer',
+                      cursor: !isConnected ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '12px',
                       transition: 'all 0.3s ease',
-                      opacity: (!isConnected || !agentParticipant) ? 0.5 : 1
+                      opacity: !isConnected ? 0.5 : 1
                     }}
                   >
                     <Settings style={{ width: '20px', height: '20px' }} />
@@ -1025,8 +1064,9 @@ export default function PrymeUI() {
                     {/* 添加调试信息显示 */}
                     <div style={{ position: 'fixed', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', borderRadius: '8px', fontSize: '12px', zIndex: 1000 }}>
                       <div>🔗 连接状态: {isConnected ? '已连接' : '未连接'}</div>
-                      <div>🤖 Agent: {agentParticipant ? agentParticipant.identity : '未找到'}</div>
+                      <div>🎤 翻译状态: {isTranslating ? '运行中' : '已停止'}</div>
                       <div>📺 字幕: {subtitle ? '有内容' : '无内容'}</div>
+                      <div>🏠 房间: {selectedRoom?.roomName || '未选择'}</div>
                     </div>
                 </LiveKitRoom>
               )}
