@@ -23,18 +23,18 @@ app = Flask(__name__)
 CORS(app, 
      resources={
          r"/api/*": {
-             "origins": ["https://translated-frontend.onrender.com"],
+             "origins": ["https://translated-frontend-02q6.onrender.com"],
              "methods": ["GET", "POST", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"],
              "supports_credentials": True
          },
          r"/health": {
-             "origins": ["https://translated-frontend.onrender.com"],
+             "origins": ["https://translated-frontend-02q6.onrender.com"],
              "methods": ["GET"],
              "allow_headers": ["Content-Type"]
          },
          r"/": {
-             "origins": ["https://translated-frontend.onrender.com"],
+             "origins": ["https://translated-frontend-02q6.onrender.com"],
              "methods": ["GET"],
              "allow_headers": ["Content-Type"]
          }
@@ -146,7 +146,7 @@ def health_check():
         'status': 'ok', 
         'service': 'livekit-token-server',
         'cors': 'flask-cors only',
-        'allowed_origins': ['https://translated-frontend.onrender.com']
+        'allowed_origins': ['https://translated-frontend-02q6.onrender.com']
     })
 
 @app.route('/', methods=['GET'])
@@ -162,7 +162,7 @@ def root():
             'token': '/api/token (POST)',
             'health': '/health (GET)'
         },
-        'allowed_origins': ['https://translated-frontend.onrender.com']
+        'allowed_origins': ['https://translated-frontend-02q6.onrender.com']
     })
 
 # 全局错误处理器 - 不手动添加CORS头
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
     logger.info(f"🚀 启动Token服务器")
     logger.info(f"📡 端口: {port}")
-    logger.info(f"🌐 允许的前端域名: https://translated-frontend.onrender.com")
+    logger.info(f"🌐 允许的前端域名: https://translated-frontend-02q6.onrender.com")
     logger.info(f"🔒 CORS策略: 仅使用flask-cors（避免重复头部）")
     
     app.run(host='0.0.0.0', port=port, debug=False) 
