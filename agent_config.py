@@ -460,27 +460,12 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         logger.info(f"🗣️ 初始化STT (Deepgram nova-2)...")
         stt = deepgram.STT(
             model="nova-2",  # 使用nova-2模型
-            language="zh",  # 使用zh而不是zh-CN
+            language="zh-CN",  # 明确指定简体中文
             interim_results=True,  # 启用中间结果
             smart_format=True,  # 启用智能格式化
             punctuate=True,  # 启用标点符号
         )
-        logger.info(f"✅ STT初始化成功 - 模型: nova-2, 语言: zh")
-        
-        # 添加STT调试
-        original_recognize = stt.recognize
-        async def debug_stt_recognize(*args, **kwargs):
-            logger.info(f"[LOG][stt] 🗣️ 开始语音识别...")
-            result = await original_recognize(*args, **kwargs)
-            if result and hasattr(result, 'alternatives') and result.alternatives:
-                transcript = result.alternatives[0].text
-                confidence = result.alternatives[0].confidence
-                logger.info(f"[LOG][stt] 📝 识别结果: '{transcript}' (置信度: {confidence:.2f})")
-            else:
-                logger.warning(f"[LOG][stt] ⚠️ 识别结果为空")
-            return result
-        stt.recognize = debug_stt_recognize
-        
+        logger.info(f"✅ STT初始化成功 - 模型: nova-2, 语言: zh-CN")
     except Exception as e:
         logger.error(f"❌ STT初始化失败: {e}")
         raise
@@ -502,16 +487,6 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
             voice=language_info["voice_id"],
         )
         logger.info(f"✅ TTS初始化成功 - 模型: sonic-multilingual, 语音ID: {language_info['voice_id']}")
-        
-        # 添加TTS调试
-        original_synthesize = tts.synthesize
-        async def debug_tts_synthesize(text, *args, **kwargs):
-            logger.info(f"[LOG][tts] 🔊 开始语音合成: '{text[:50]}...'")
-            result = await original_synthesize(text, *args, **kwargs)
-            logger.info(f"[LOG][tts] ✅ 语音合成完成")
-            return result
-        tts.synthesize = debug_tts_synthesize
-        
     except Exception as e:
         logger.error(f"❌ TTS初始化失败: {e}")
         raise
