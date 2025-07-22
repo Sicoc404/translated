@@ -40,7 +40,7 @@ logger = logging.getLogger("agent-translation")
 app = Flask(__name__)
 
 # CORS配置 - 只允许前端域名访问
-CORS(app, origins=["https://translated-frontend.onrender.com"])
+CORS(app, origins=["https://translated-frontend-02q6.onrender.com"])
 
 # 房间与语言的映射关系
 ROOM_LANGUAGE_MAP = {
@@ -136,7 +136,7 @@ def start_flask_api():
     try:
         port = int(os.environ.get("PORT", 5000))
         logger.info(f"🚀 启动Agent翻译API服务器 - 端口: {port}")
-        logger.info(f"🌐 CORS允许域名: https://translated-frontend.onrender.com")
+        logger.info(f"🌐 CORS允许域名: https://translated-frontend-02q6.onrender.com")
         app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
     except Exception as e:
         logger.error(f"❌ Flask API服务器启动失败: {e}")
