@@ -395,6 +395,21 @@ async def entrypoint(ctx: JobContext):
         
         # 保持会话运行
         logger.info(f"🔄 {language_name} Agent运行中，监听语音输入...")
+        print(f"🔄 Agent已启动完成，开始持续监听音频流...", file=sys.stdout, flush=True)
+        
+        # 保持 Agent 持续运行，防止自动退出
+        logger.info(f"⏳ Agent进入持续运行模式，等待音频输入...")
+        print(f"⏳ Agent持续运行中，等待用户音频输入...", file=sys.stdout, flush=True)
+        
+        # 使用 asyncio.Event().wait() 保持Agent持续运行
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            logger.info(f"🛑 Agent收到取消信号，准备退出...")
+            print(f"🛑 Agent正在优雅退出...", file=sys.stdout, flush=True)
+        except KeyboardInterrupt:
+            logger.info(f"🛑 Agent收到中断信号，准备退出...")
+            print(f"🛑 Agent收到中断信号，正在退出...", file=sys.stdout, flush=True)
         
     except Exception as e:
         logger.error(f"❌ Agent启动失败: {e}")
@@ -411,10 +426,23 @@ async def entrypoint(ctx: JobContext):
         raise
     finally:
         # 清理Agent状态
-        if 'room_name' in locals() and room_name in active_agents:
-            del active_agents[room_name]
-            agent_stats["active_sessions"] -= 1
-        logger.info(f"🔌 Agent会话已结束")
+        try:
+            if 'room_name' in locals() and room_name in active_agents:
+                del active_agents[room_name]
+                agent_stats["active_sessions"] -= 1
+                logger.info(f"🧹 清理Agent状态: {room_name}")
+                print(f"🧹 Agent状态已清理: {room_name}", file=sys.stdout, flush=True)
+            
+            if 'language_name' in locals():
+                logger.info(f"🔌 {language_name} Agent会话已结束")
+                print(f"🔌 {language_name} Agent会话已结束", file=sys.stdout, flush=True)
+            else:
+                logger.info(f"🔌 Agent会话已结束")
+                print(f"🔌 Agent会话已结束", file=sys.stdout, flush=True)
+                
+        except Exception as cleanup_error:
+            logger.error(f"❌ 清理Agent状态时出错: {cleanup_error}")
+            print(f"❌ 清理Agent状态时出错: {cleanup_error}", file=sys.stdout, flush=True)
 
 def prewarm(proc: JobProcess):
     """预热函数 - 预加载模型和资源"""
