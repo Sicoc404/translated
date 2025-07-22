@@ -487,7 +487,8 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
 
 def create_translation_agent(language: str) -> Agent:
     """
-    为指定语言创建翻译Agent（包含完整组件）
+    为指定语言创建翻译Agent（仅包含指令，不包含组件）
+    符合LiveKit官方文档规范
     
     Args:
         language: 目标语言代码
@@ -501,69 +502,10 @@ def create_translation_agent(language: str) -> Agent:
     language_name = LANGUAGE_CONFIG[language]["name"]
     logger.info(f"🤖 创建 {language_name} Agent框架...")
     
-    # 创建翻译组件
-    vad, stt, llm_instance, tts = create_translation_components(language)
-    
-    # 创建Agent并分配组件
+    # 创建Agent - 只包含指令，组件由AgentSession管理
     agent = Agent(
-        instructions=get_translation_instructions(language),
-        vad=vad,
-        stt=stt,
-        llm=llm_instance,
-        tts=tts
+        instructions=get_translation_instructions(language)
     )
     
-    # 添加语音处理回调
-    @agent.on("user_speech_committed")
-    async def on_user_speech(speech_event):
-        """处理用户语音输入"""
-        if speech_event.alternatives:
-            transcript = speech_event.alternatives[0].text
-            confidence = speech_event.alternatives[0].confidence
-            logger.info(f"[LOG][speech-in] 收到用户语音: '{transcript}' (置信度: {confidence:.2f})")
-            if DEBUG_ENABLED:
-                debug_transcription(transcript, True, confidence)
-        else:
-            logger.warning(f"[LOG][speech-in] 收到空的语音事件")
-    
-    @agent.on("agent_speech_committed") 
-    async def on_agent_speech(speech_event):
-        """处理Agent语音输出"""
-        if speech_event.alternatives:
-            translation = speech_event.alternatives[0].text
-            logger.info(f"[LOG][speech-out] Agent语音输出: '{translation}'")
-            if DEBUG_ENABLED:
-                debug_tts_request(translation, language)
-        else:
-            logger.warning(f"[LOG][speech-out] 收到空的语音输出事件")
-    
-    @agent.on("function_calls_finished")
-    async def on_function_calls_finished(called_functions):
-        """处理函数调用完成"""
-        logger.info(f"[LOG][functions] 函数调用完成: {len(called_functions)} 个")
-        for func_call in called_functions:
-            logger.info(f"[LOG][functions] 调用函数: {func_call.function_info.name}")
-    
-    # 添加更多调试回调
-    @agent.on("user_started_speaking")
-    async def on_user_started_speaking():
-        """用户开始说话"""
-        logger.info(f"[LOG][speech-in] 🎤 用户开始说话...")
-    
-    @agent.on("user_stopped_speaking") 
-    async def on_user_stopped_speaking():
-        """用户停止说话"""
-        logger.info(f"[LOG][speech-in] 🎤 用户停止说话")
-    
-    @agent.on("agent_started_speaking")
-    async def on_agent_started_speaking():
-        """Agent开始说话"""
-        logger.info(f"[LOG][speech-out] 🔊 Agent开始语音合成...")
-    
-    @agent.on("agent_stopped_speaking")
-    async def on_agent_stopped_speaking():
-        """Agent停止说话"""
-        logger.info(f"[LOG][speech-out] 🔊 Agent语音合成完成")
-    
-    logger.info(f"✅ {language_name} Agent框架创建成功")
+    logger.info(f"✅ {language_name} Agent创建成功")
     return agent 
