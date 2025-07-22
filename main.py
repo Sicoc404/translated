@@ -205,8 +205,8 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
         
         # 添加数据消息处理器
-        async def handle_data_received(data: bytes, participant: any):
-            """处理从客户端接收的数据消息"""
+        async def handle_data_received_async(data: bytes, participant: any):
+            """异步处理从客户端接收的数据消息"""
             try:
                 message = data.decode('utf-8')
                 logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
@@ -247,6 +247,10 @@ async def entrypoint(ctx: JobContext):
                     
             except Exception as e:
                 logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
+        
+        def handle_data_received(data: bytes, participant: any):
+            """同步回调包装器，使用asyncio.create_task处理异步逻辑"""
+            asyncio.create_task(handle_data_received_async(data, participant))
         
         # 注册数据消息处理器
         ctx.room.on('data_received', handle_data_received)
