@@ -442,15 +442,6 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         vad = silero.VAD.load()
         logger.info(f"✅ VAD初始化成功")
         
-        # 添加VAD调试回调
-        original_detect = vad.detect
-        def debug_vad_detect(*args, **kwargs):
-            result = original_detect(*args, **kwargs)
-            if result:
-                logger.info(f"[LOG][vad] 🎤 检测到语音活动")
-            return result
-        vad.detect = debug_vad_detect
-        
     except Exception as e:
         logger.error(f"❌ VAD初始化失败: {e}")
         raise
@@ -496,7 +487,7 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
 
 def create_translation_agent(language: str) -> Agent:
     """
-    为指定语言创建翻译Agent（仅包含指令）
+    为指定语言创建翻译Agent（包含完整组件）
     
     Args:
         language: 目标语言代码
@@ -510,9 +501,16 @@ def create_translation_agent(language: str) -> Agent:
     language_name = LANGUAGE_CONFIG[language]["name"]
     logger.info(f"🤖 创建 {language_name} Agent框架...")
     
-    # 创建Agent，只包含指令，不设置组件
+    # 创建翻译组件
+    vad, stt, llm_instance, tts = create_translation_components(language)
+    
+    # 创建Agent并分配组件
     agent = Agent(
-        instructions=get_translation_instructions(language)
+        instructions=get_translation_instructions(language),
+        vad=vad,
+        stt=stt,
+        llm=llm_instance,
+        tts=tts
     )
     
     # 添加语音处理回调
