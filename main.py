@@ -255,10 +255,43 @@ async def entrypoint(ctx: JobContext):
         
         @ctx.room.on("track_subscribed")
         def on_track_subscribed(track, publication, participant):
-            """监听音频轨道订阅"""
+            """监听音频轨道订阅 - 增强调试信息"""
+            # 原有的日志
             logger.info(f"[LOG][audio-in] 订阅到轨道: {track.kind} from {participant.identity}")
+            
+            # 新增的调试信息
+            print(f"🎧 订阅了音轨: {track.kind}, 来自: {participant.identity}", file=sys.stdout, flush=True)
+            logger.info(f"🎧 TRACK_SUBSCRIBED: kind={track.kind}, participant={participant.identity}, publication_sid={publication.sid if publication else 'N/A'}")
+            
             if track.kind == "audio":
                 logger.info(f"[LOG][audio-in] 开始监听音频输入...")
+                print(f"🔊 音频轨道已订阅，开始处理音频流", file=sys.stdout, flush=True)
+                
+                # 额外的音频轨道调试信息
+                try:
+                    logger.info(f"🎵 音频轨道详情: source={track.source if hasattr(track, 'source') else 'unknown'}")
+                    if hasattr(track, 'sample_rate'):
+                        logger.info(f"🎵 采样率: {track.sample_rate}Hz")
+                    if hasattr(track, 'num_channels'):
+                        logger.info(f"🎵 声道数: {track.num_channels}")
+                except Exception as track_info_error:
+                    logger.warning(f"⚠️ 获取音频轨道详情失败: {track_info_error}")
+            else:
+                logger.info(f"📹 非音频轨道: {track.kind}")
+                print(f"📹 订阅了非音频轨道: {track.kind}", file=sys.stdout, flush=True)
+        
+        # 添加参与者连接监听器
+        @ctx.room.on("participant_connected")
+        def on_participant_connected(participant):
+            """监听参与者连接事件"""
+            logger.info(f"👤 参与者已连接: {participant.identity}")
+            print(f"👤 新参与者加入房间: {participant.identity}", file=sys.stdout, flush=True)
+        
+        @ctx.room.on("participant_disconnected")
+        def on_participant_disconnected(participant):
+            """监听参与者断开连接事件"""
+            logger.info(f"👋 参与者已断开: {participant.identity}")
+            print(f"👋 参与者离开房间: {participant.identity}", file=sys.stdout, flush=True)
         
         logger.info(f"📨 房间事件监听器已注册")
         
