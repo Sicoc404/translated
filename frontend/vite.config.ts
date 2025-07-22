@@ -26,7 +26,7 @@ export default defineConfig({
     sourcemap: true,
     // 明确指定入口文件
     rollupOptions: {
-      input: "index.html",
+      input: resolve(__dirname, "index.html"),
     },
   },
   // 确保正确解析路径别名
@@ -35,6 +35,4 @@ export default defineConfig({
       "@": resolve(__dirname, "./src"),
     },
   },
-  // 禁用 publicDir，因为我们没有 public 目录
-  publicDir: false,
 });
