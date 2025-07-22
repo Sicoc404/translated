@@ -21,7 +21,8 @@ from livekit.agents import (
     JobContext, 
     WorkerOptions, 
     cli, 
-    JobProcess
+    JobProcess,
+    AutoSubscribe
 )
 from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
@@ -144,13 +145,14 @@ def start_flask_api():
 async def entrypoint(ctx: JobContext):
     """
     LiveKit Agent入口点 - 处理翻译逻辑
+    符合LiveKit官方文档规范
     
     Args:
         ctx: JobContext实例，包含房间连接信息
     """
     try:
-        # 连接到房间
-        await ctx.connect()
+        # 正确连接到房间，包含auto_subscribe参数
+        await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         
         # 获取房间信息
         room_name = ctx.room.name
@@ -185,11 +187,70 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"🔧 创建 {language_name} 翻译组件...")
         vad, stt, llm, tts = create_translation_components(target_language)
         
-        # 创建Agent
+        # 创建Agent（不包含事件监听器）
         logger.info(f"🤖 创建 {language_name} Agent...")
         agent = create_translation_agent(target_language)
         
-        # 创建并启动AgentSession
+        logger.info(f"✅ {language_name} 翻译Agent配置完成:")
+        logger.info(f"  🎤 VAD: {type(vad).__name__}")
+        logger.info(f"  🗣️ STT: {type(stt).__name__} (中文识别)")
+        logger.info(f"  🧠 LLM: {type(llm).__name__} (Groq翻译)")
+        logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
+        
+        # 正确的事件监听方式 - 使用ctx.room.on()
+        @ctx.room.on("data_received")
+        async def handle_data_received(data: bytes, participant):
+            """处理从客户端接收的数据消息"""
+            try:
+                message = data.decode('utf-8')
+                logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
+                
+                # 尝试解析JSON消息
+                try:
+                    json_data = json.loads(message)
+                    if json_data.get('type') == 'translation_control':
+                        action = json_data.get('action')
+                        logger.info(f"[LOG][rpc-recv] 翻译控制命令: {action}")
+                        
+                        if action == 'start':
+                            logger.info(f"[LOG][rpc-recv] 启动翻译模式")
+                            # 发送确认消息
+                            response_data = json.dumps({
+                                'type': 'translation_status',
+                                'status': 'started',
+                                'language': language_name,
+                                'timestamp': asyncio.get_event_loop().time()
+                            }).encode('utf-8')
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译启动确认已发送")
+                            
+                        elif action == 'stop':
+                            logger.info(f"[LOG][rpc-recv] 停止翻译模式")
+                            # 发送确认消息
+                            response_data = json.dumps({
+                                'type': 'translation_status', 
+                                'status': 'stopped',
+                                'timestamp': asyncio.get_event_loop().time()
+                            }).encode('utf-8')
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译停止确认已发送")
+                            
+                except json.JSONDecodeError:
+                    logger.warning(f"[LOG][rpc-recv] 无法解析JSON消息: {message}")
+                    
+            except Exception as e:
+                logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
+        
+        @ctx.room.on("track_subscribed")
+        def on_track_subscribed(track, publication, participant):
+            """监听音频轨道订阅"""
+            logger.info(f"[LOG][audio-in] 订阅到轨道: {track.kind} from {participant.identity}")
+            if track.kind == "audio":
+                logger.info(f"[LOG][audio-in] 开始监听音频输入...")
+        
+        logger.info(f"📨 房间事件监听器已注册")
+        
+        # 创建并启动AgentSession - 正确传入agent和room参数
         logger.info(f"📡 初始化 {language_name} AgentSession...")
         session = AgentSession(
             vad=vad,
@@ -198,7 +259,7 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
         )
         
-        # 添加语音处理事件监听
+        # 添加AgentSession事件监听
         @session.on("user_speech_committed")
         async def on_user_speech(event):
             """处理用户语音转写结果"""
@@ -240,86 +301,14 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.error(f"❌ 发送翻译结果失败: {e}")
         
-        logger.info(f"✅ {language_name} 翻译Agent配置完成:")
-        logger.info(f"  🎤 VAD: {type(vad).__name__}")
-        logger.info(f"  🗣️ STT: {type(stt).__name__} (中文识别)")
-        logger.info(f"  🧠 LLM: {type(llm).__name__} (Groq翻译)")
-        logger.info(f"  🔊 TTS: {type(tts).__name__} ({language_name}合成)")
-        
-        # 添加数据消息处理器
-        async def handle_data_received_async(data: bytes, participant: any):
-            """异步处理从客户端接收的数据消息"""
-            try:
-                message = data.decode('utf-8')
-                logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
-                
-                # 尝试解析JSON消息
-                import json
-                try:
-                    json_data = json.loads(message)
-                    if json_data.get('type') == 'translation_control':
-                        action = json_data.get('action')
-                        logger.info(f"[LOG][rpc-recv] 翻译控制命令: {action}")
-                        
-                        if action == 'start':
-                            logger.info(f"[LOG][rpc-recv] 启动翻译模式")
-                            # 发送确认消息
-                            response_data = json.dumps({
-                                'type': 'translation_status',
-                                'status': 'started',
-                                'language': language_name,
-                                'timestamp': asyncio.get_event_loop().time()
-                            }).encode('utf-8')
-                            await ctx.room.local_participant.publish_data(response_data)
-                            logger.info(f"[LOG][subtitles-send] 翻译启动确认已发送")
-                            
-                        elif action == 'stop':
-                            logger.info(f"[LOG][rpc-recv] 停止翻译模式")
-                            # 发送确认消息
-                            response_data = json.dumps({
-                                'type': 'translation_status', 
-                                'status': 'stopped',
-                                'timestamp': asyncio.get_event_loop().time()
-                            }).encode('utf-8')
-                            await ctx.room.local_participant.publish_data(response_data)
-                            logger.info(f"[LOG][subtitles-send] 翻译停止确认已发送")
-                            
-                except json.JSONDecodeError:
-                    logger.warning(f"[LOG][rpc-recv] 无法解析JSON消息: {message}")
-                    
-            except Exception as e:
-                logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
-        
-        def handle_data_received(data: bytes, participant: any):
-            """同步回调包装器，使用asyncio.create_task处理异步逻辑"""
-            asyncio.create_task(handle_data_received_async(data, participant))
-        
-        # 注册数据消息处理器
-        ctx.room.on('data_received', handle_data_received)
-        logger.info(f"📨 数据消息处理器已注册")
-        
-        # 启动Agent会话
+        # 启动Agent会话 - 正确传入agent和room参数
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
-        
-        # 确保Agent启用语音处理
-        agent.enable_voice_activity_detection = True
-        agent.enable_speech_to_text = True
-        agent.enable_text_to_speech = True
-        
         await session.start(agent=agent, room=ctx.room)
         
         logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
         logger.info(f"🎧 等待用户语音输入进行实时翻译...")
         
-        # 添加音频轨道监听
-        def on_track_subscribed(track, publication, participant):
-            logger.info(f"[LOG][audio-in] 订阅到轨道: {track.kind} from {participant.identity}")
-            if track.kind == "audio":
-                logger.info(f"[LOG][audio-in] 开始监听音频输入...")
-        
-        ctx.room.on("track_subscribed", on_track_subscribed)
-        
-        # 监听本地参与者的轨道
+        # 监听现有参与者的轨道
         for participant in ctx.room.participants.values():
             logger.info(f"[LOG][participants] 检查参与者: {participant.identity}")
             for track_pub in participant.tracks.values():
@@ -351,10 +340,10 @@ async def entrypoint(ctx: JobContext):
         raise
     finally:
         # 清理Agent状态
-        if room_name in active_agents:
+        if 'room_name' in locals() and room_name in active_agents:
             del active_agents[room_name]
             agent_stats["active_sessions"] -= 1
-        logger.info(f"🔌 {room_name} Agent会话已结束")
+        logger.info(f"🔌 Agent会话已结束")
 
 def prewarm(proc: JobProcess):
     """预热函数 - 预加载模型和资源"""
