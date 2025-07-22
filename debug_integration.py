@@ -73,14 +73,9 @@ class FlowDebugger:
             self.stats["audio_published"] += 1
     
     def print_summary(self):
-        """打印统计摘要"""
-        elapsed = time.time() - self.start_time
-        debug_logger.info("📊 === 流水线统计摘要 ===")
-        debug_logger.info(f"📊 运行时间: {elapsed:.1f}秒")
-        for key, value in self.stats.items():
-            status = "✅" if value > 0 else "❌"
-            debug_logger.info(f"📊 {status} {key}: {value}")
-        debug_logger.info("📊 ========================")
+        """打印统计摘要 - 已禁用以减少日志噪音"""
+        # 统计摘要已禁用，只在需要时手动调用
+        pass
 
 # 全局调试器实例
 flow_debugger = FlowDebugger()
@@ -170,16 +165,8 @@ def start_debug_monitoring():
     debug_logger.info("   📢 音频发布")
     debug_logger.info("   ❌ 错误和警告")
     
-    # 设置定期统计输出
-    import threading
-    def periodic_summary():
-        while True:
-            time.sleep(60)  # 每分钟输出一次统计
-            flow_debugger.print_summary()
-    
-    # 在后台线程中运行统计输出
-    stats_thread = threading.Thread(target=periodic_summary, daemon=True)
-    stats_thread.start()
+    # 定期统计输出已禁用以减少日志噪音
+    # 如需要统计信息，可以手动调用 get_debug_stats() 或 flow_debugger.print_summary()
 
 def get_debug_stats():
     """获取当前调试统计"""
