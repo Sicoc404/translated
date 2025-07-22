@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 export default defineConfig({
+  root: ".",
   plugins: [react()],
   server: {
     host: true,  // 绑定到 0.0.0.0
