@@ -309,18 +309,7 @@ async def entrypoint(ctx: JobContext):
             """异步处理用户语音转写结果"""
             transcript = event.alternatives[0].text if event.alternatives else ""
             confidence = event.alternatives[0].confidence if event.alternatives else 0.0
-            
-            # 添加调试打印 - 确认识别内容
-            print(f"📝 收到用户语音: {transcript}", file=sys.stdout, flush=True)
             logger.info(f"[LOG][speech-in] 用户语音转写: '{transcript}' (置信度: {confidence:.2f})")
-            
-            # 检查空内容
-            if not transcript.strip():
-                print("⚠️ 空内容，跳过翻译", file=sys.stdout, flush=True)
-                logger.warning(f"[LOG][speech-in] 收到空转写内容，跳过处理")
-                return
-            
-            print(f"🔄 开始处理语音转写: '{transcript}' (置信度: {confidence:.2f})", file=sys.stdout, flush=True)
             
             # 发送转写结果到前端
             try:
@@ -333,14 +322,8 @@ async def entrypoint(ctx: JobContext):
                 }).encode('utf-8')
                 await ctx.room.local_participant.publish_data(transcript_data)
                 logger.info(f"[LOG][subtitles-send] 转写结果已发送: {transcript}")
-                print(f"📤 转写结果已发送到前端: '{transcript}'", file=sys.stdout, flush=True)
             except Exception as e:
                 logger.error(f"❌ 发送转写结果失败: {e}")
-                print(f"❌ 发送转写结果失败: {e}", file=sys.stdout, flush=True)
-            
-            # 注意：在LiveKit Agents框架中，翻译和TTS是由AgentSession自动处理的
-            # 这里的transcript会自动传递给LLM进行翻译，然后传递给TTS进行语音合成
-            print(f"🤖 转写内容将自动传递给LLM进行翻译...", file=sys.stdout, flush=True)
         
         @session.on("user_speech_committed")
         def on_user_speech(event):
@@ -350,17 +333,7 @@ async def entrypoint(ctx: JobContext):
         async def on_agent_speech_async(event):
             """异步处理Agent语音合成结果"""
             translation = event.alternatives[0].text if event.alternatives else ""
-            
-            # 添加调试打印 - 确认翻译和TTS结果
-            print(f"🌍 翻译结果: {translation}", file=sys.stdout, flush=True)
             logger.info(f"[LOG][speech-out] Agent翻译输出: '{translation}'")
-            
-            if not translation.strip():
-                print("⚠️ 翻译结果为空", file=sys.stdout, flush=True)
-                logger.warning(f"[LOG][speech-out] Agent翻译结果为空")
-                return
-            
-            print(f"🗣️ 已触发 TTS 合成: '{translation}'", file=sys.stdout, flush=True)
             
             # 发送翻译结果到前端
             try:
@@ -373,41 +346,13 @@ async def entrypoint(ctx: JobContext):
                 }).encode('utf-8')
                 await ctx.room.local_participant.publish_data(translation_data)
                 logger.info(f"[LOG][subtitles-send] 翻译结果已发送: {translation}")
-                print(f"📤 翻译结果已发送到前端: '{translation}' ({target_language})", file=sys.stdout, flush=True)
-                print(f"🔊 TTS音频应该已经开始播放...", file=sys.stdout, flush=True)
             except Exception as e:
                 logger.error(f"❌ 发送翻译结果失败: {e}")
-                print(f"❌ 发送翻译结果失败: {e}", file=sys.stdout, flush=True)
         
         @session.on("agent_speech_committed")
         def on_agent_speech(event):
             """同步回调包装器"""
             asyncio.create_task(on_agent_speech_async(event))
-        
-        # 添加更多调试事件监听器
-        @session.on("user_started_speaking")
-        def on_user_started_speaking():
-            """用户开始说话"""
-            print(f"🎤 用户开始说话...", file=sys.stdout, flush=True)
-            logger.info(f"[LOG][speech-in] 🎤 用户开始说话...")
-        
-        @session.on("user_stopped_speaking")
-        def on_user_stopped_speaking():
-            """用户停止说话"""
-            print(f"🎤 用户停止说话", file=sys.stdout, flush=True)
-            logger.info(f"[LOG][speech-in] 🎤 用户停止说话")
-        
-        @session.on("agent_started_speaking")
-        def on_agent_started_speaking():
-            """Agent开始说话"""
-            print(f"🔊 Agent开始语音合成...", file=sys.stdout, flush=True)
-            logger.info(f"[LOG][speech-out] 🔊 Agent开始语音合成...")
-        
-        @session.on("agent_stopped_speaking")
-        def on_agent_stopped_speaking():
-            """Agent停止说话"""
-            print(f"🔊 Agent语音合成完成", file=sys.stdout, flush=True)
-            logger.info(f"[LOG][speech-out] 🔊 Agent语音合成完成")
         
         # 启动Agent会话 - 正确传入agent和room参数
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
