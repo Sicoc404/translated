@@ -29,12 +29,20 @@ from agent_config import create_translation_agent, create_translation_components
 # 加载环境变量
 load_dotenv()
 
-# 配置日志
+# 配置日志 - 确保所有错误都输出到stdout供Render捕获
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # 改为DEBUG级别捕获更多信息
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # 明确输出到stdout
+        logging.StreamHandler(sys.stderr)   # 同时输出到stderr
+    ]
 )
+
+# 设置所有相关logger的级别
+logging.getLogger("livekit").setLevel(logging.DEBUG)
+logging.getLogger("livekit.agents").setLevel(logging.DEBUG)
+logging.getLogger("agent-config").setLevel(logging.DEBUG)
 logger = logging.getLogger("agent-translation")
 
 # Flask应用配置
@@ -358,7 +366,15 @@ async def entrypoint(ctx: JobContext):
     except Exception as e:
         logger.error(f"❌ Agent启动失败: {e}")
         import traceback
-        logger.error(f"错误详情:\n{traceback.format_exc()}")
+        error_details = traceback.format_exc()
+        logger.error(f"错误详情:\n{error_details}")
+        
+        # 强制输出到stdout和stderr确保Render能看到
+        print(f"RENDER_ERROR: Agent启动失败: {e}", file=sys.stdout, flush=True)
+        print(f"RENDER_ERROR_DETAILS:\n{error_details}", file=sys.stdout, flush=True)
+        print(f"RENDER_ERROR: Agent启动失败: {e}", file=sys.stderr, flush=True)
+        print(f"RENDER_ERROR_DETAILS:\n{error_details}", file=sys.stderr, flush=True)
+        
         raise
     finally:
         # 清理Agent状态
