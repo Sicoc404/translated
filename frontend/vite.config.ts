@@ -4,7 +4,6 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "path";
 
 export default defineConfig({
-  root: ".",
   plugins: [react()],
   server: {
     host: true,  // 绑定到 0.0.0.0
@@ -27,7 +26,7 @@ export default defineConfig({
     sourcemap: true,
     // 明确指定入口文件
     rollupOptions: {
-      input: resolve(__dirname, "./index.html"),
+      input: "index.html",
     },
   },
   // 确保正确解析路径别名
