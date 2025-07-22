@@ -131,7 +131,7 @@ export default function PrymeUI() {
       console.log(`正在获取房间 ${roomName} 的token...`);
       
       // 调用后端API获取token
-      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed.onrender.com';
+      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed-qmuq.onrender.com';
       const response = await fetch(`${tokenServerUrl}/api/token`, {
         method: 'POST',
         headers: {
