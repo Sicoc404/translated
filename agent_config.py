@@ -16,6 +16,30 @@ from typing import Dict, Any, Tuple, AsyncIterator
 from groq import Groq
 import asyncio
 
+# 导入调试功能
+try:
+    from debug_integration import (
+        debug_audio_frame, debug_transcription, debug_translation, 
+        debug_tts_request, debug_audio_publish, debug_error, debug_warning,
+        flow_debugger, debug_function
+    )
+    DEBUG_ENABLED = True
+    logger.info("✅ 调试功能已启用")
+except ImportError:
+    # 如果调试模块不存在，创建空的调试函数
+    DEBUG_ENABLED = False
+    def debug_audio_frame(*args, **kwargs): pass
+    def debug_transcription(*args, **kwargs): pass
+    def debug_translation(*args, **kwargs): pass
+    def debug_tts_request(*args, **kwargs): pass
+    def debug_audio_publish(*args, **kwargs): pass
+    def debug_error(*args, **kwargs): pass
+    def debug_warning(*args, **kwargs): pass
+    def debug_function(name): 
+        def decorator(func): return func
+        return decorator
+    logger.warning("⚠️ 调试功能未启用（debug_integration.py 不存在）")
+
 # 配置日志
 logger = logging.getLogger("agent-config")
 
@@ -310,6 +334,11 @@ class CustomGroqLLMStream(llm.LLMStream):
                         
                         if delta_content:
                             logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
+                            full_content += delta_content
+                            
+                            # 调试：记录翻译片段
+                            if DEBUG_ENABLED and len(full_content) > 10:
+                                debug_translation(full_content, "zh", "target")
                             
                             # 创建符合LiveKit格式的ChatChunk并推送事件
                             try:
@@ -340,11 +369,16 @@ class CustomGroqLLMStream(llm.LLMStream):
                                 logger.debug(f"✅ ChatChunk推送成功: ID={chunk_id}")
                             except Exception as chunk_error:
                                 logger.error(f"❌ 创建ChatChunk失败: {chunk_error}")
+                                debug_error(f"创建ChatChunk失败: {chunk_error}", "CustomGroqLLMStream")
                                 import traceback
                                 logger.error(f"错误详情:\n{traceback.format_exc()}")
                                 # 继续处理下一个chunk，不中断整个流程
             
             logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
+            
+            # 调试：记录完整翻译结果
+            if DEBUG_ENABLED and full_content.strip():
+                debug_translation(full_content, "zh", "target")
             
         except Exception as e:
             logger.error(f"❌ Groq LLM流式处理失败: {e}")
@@ -407,6 +441,16 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         logger.info(f"🎤 初始化VAD (Silero)...")
         vad = silero.VAD.load()
         logger.info(f"✅ VAD初始化成功")
+        
+        # 添加VAD调试回调
+        original_detect = vad.detect
+        def debug_vad_detect(*args, **kwargs):
+            result = original_detect(*args, **kwargs)
+            if result:
+                logger.info(f"[LOG][vad] 🎤 检测到语音活动")
+            return result
+        vad.detect = debug_vad_detect
+        
     except Exception as e:
         logger.error(f"❌ VAD初始化失败: {e}")
         raise
@@ -415,10 +459,28 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
     try:
         logger.info(f"🗣️ 初始化STT (Deepgram nova-2)...")
         stt = deepgram.STT(
-            model="nova-2",  # 中文模型
-            language="zh",
+            model="nova-2",  # 使用nova-2模型
+            language="zh",  # 使用zh而不是zh-CN
+            interim_results=True,  # 启用中间结果
+            smart_format=True,  # 启用智能格式化
+            punctuate=True,  # 启用标点符号
         )
         logger.info(f"✅ STT初始化成功 - 模型: nova-2, 语言: zh")
+        
+        # 添加STT调试
+        original_recognize = stt.recognize
+        async def debug_stt_recognize(*args, **kwargs):
+            logger.info(f"[LOG][stt] 🗣️ 开始语音识别...")
+            result = await original_recognize(*args, **kwargs)
+            if result and hasattr(result, 'alternatives') and result.alternatives:
+                transcript = result.alternatives[0].text
+                confidence = result.alternatives[0].confidence
+                logger.info(f"[LOG][stt] 📝 识别结果: '{transcript}' (置信度: {confidence:.2f})")
+            else:
+                logger.warning(f"[LOG][stt] ⚠️ 识别结果为空")
+            return result
+        stt.recognize = debug_stt_recognize
+        
     except Exception as e:
         logger.error(f"❌ STT初始化失败: {e}")
         raise
@@ -440,6 +502,16 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
             voice=language_info["voice_id"],
         )
         logger.info(f"✅ TTS初始化成功 - 模型: sonic-multilingual, 语音ID: {language_info['voice_id']}")
+        
+        # 添加TTS调试
+        original_synthesize = tts.synthesize
+        async def debug_tts_synthesize(text, *args, **kwargs):
+            logger.info(f"[LOG][tts] 🔊 开始语音合成: '{text[:50]}...'")
+            result = await original_synthesize(text, *args, **kwargs)
+            logger.info(f"[LOG][tts] ✅ 语音合成完成")
+            return result
+        tts.synthesize = debug_tts_synthesize
+        
     except Exception as e:
         logger.error(f"❌ TTS初始化失败: {e}")
         raise
@@ -467,6 +539,58 @@ def create_translation_agent(language: str) -> Agent:
     agent = Agent(
         instructions=get_translation_instructions(language)
     )
+    
+    # 添加语音处理回调
+    @agent.on("user_speech_committed")
+    async def on_user_speech(speech_event):
+        """处理用户语音输入"""
+        if speech_event.alternatives:
+            transcript = speech_event.alternatives[0].text
+            confidence = speech_event.alternatives[0].confidence
+            logger.info(f"[LOG][speech-in] 收到用户语音: '{transcript}' (置信度: {confidence:.2f})")
+            if DEBUG_ENABLED:
+                debug_transcription(transcript, True, confidence)
+        else:
+            logger.warning(f"[LOG][speech-in] 收到空的语音事件")
+    
+    @agent.on("agent_speech_committed") 
+    async def on_agent_speech(speech_event):
+        """处理Agent语音输出"""
+        if speech_event.alternatives:
+            translation = speech_event.alternatives[0].text
+            logger.info(f"[LOG][speech-out] Agent语音输出: '{translation}'")
+            if DEBUG_ENABLED:
+                debug_tts_request(translation, language)
+        else:
+            logger.warning(f"[LOG][speech-out] 收到空的语音输出事件")
+    
+    @agent.on("function_calls_finished")
+    async def on_function_calls_finished(called_functions):
+        """处理函数调用完成"""
+        logger.info(f"[LOG][functions] 函数调用完成: {len(called_functions)} 个")
+        for func_call in called_functions:
+            logger.info(f"[LOG][functions] 调用函数: {func_call.function_info.name}")
+    
+    # 添加更多调试回调
+    @agent.on("user_started_speaking")
+    async def on_user_started_speaking():
+        """用户开始说话"""
+        logger.info(f"[LOG][speech-in] 🎤 用户开始说话...")
+    
+    @agent.on("user_stopped_speaking") 
+    async def on_user_stopped_speaking():
+        """用户停止说话"""
+        logger.info(f"[LOG][speech-in] 🎤 用户停止说话")
+    
+    @agent.on("agent_started_speaking")
+    async def on_agent_started_speaking():
+        """Agent开始说话"""
+        logger.info(f"[LOG][speech-out] 🔊 Agent开始语音合成...")
+    
+    @agent.on("agent_stopped_speaking")
+    async def on_agent_stopped_speaking():
+        """Agent停止说话"""
+        logger.info(f"[LOG][speech-out] 🔊 Agent语音合成完成")
     
     logger.info(f"✅ {language_name} Agent框架创建成功")
     return agent 
