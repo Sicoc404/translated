@@ -320,14 +320,24 @@ async def entrypoint(ctx: JobContext):
         logger.info(f"🎉 {language_name} 翻译Agent已成功运行!")
         logger.info(f"🎧 等待用户语音输入进行实时翻译...")
         
-        # 监听现有参与者的轨道
-        for participant in ctx.room.participants.values():
-            logger.info(f"[LOG][participants] 检查参与者: {participant.identity}")
-            for track_pub in participant.tracks.values():
-                if track_pub.track:
-                    logger.info(f"[LOG][audio-in] 发现现有轨道: {track_pub.track.kind}")
-                    if track_pub.track.kind == "audio":
-                        logger.info(f"[LOG][audio-in] 音频轨道已就绪")
+        # 监听现有参与者的轨道 - 使用正确的方法获取参与者
+        try:
+            # 根据LiveKit Python SDK文档，使用remote_participants属性
+            if hasattr(ctx.room, 'remote_participants'):
+                participants = ctx.room.remote_participants
+                logger.info(f"[LOG][participants] 发现 {len(participants)} 个远程参与者")
+                for participant in participants.values():
+                    logger.info(f"[LOG][participants] 检查参与者: {participant.identity}")
+                    for track_pub in participant.tracks.values():
+                        if track_pub.track:
+                            logger.info(f"[LOG][audio-in] 发现现有轨道: {track_pub.track.kind}")
+                            if track_pub.track.kind == "audio":
+                                logger.info(f"[LOG][audio-in] 音频轨道已就绪")
+            else:
+                logger.info(f"[LOG][participants] 房间暂无远程参与者或无法访问参与者列表")
+        except Exception as e:
+            logger.warning(f"[LOG][participants] 获取参与者信息失败: {e}")
+            logger.info(f"[LOG][participants] 将通过事件监听器处理新加入的参与者")
         
         # 发送欢迎消息到数据通道
         try:
