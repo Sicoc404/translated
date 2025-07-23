@@ -249,31 +249,14 @@ async def entrypoint(ctx: JobContext):
                 logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
         
         @ctx.room.on("data_received")
-        def handle_data_received(*args, **kwargs):
-            """同步回调包装器 - 使用*args动态接收参数"""
+        def handle_data_received(data_packet):
+            """同步回调包装器 - 符合LiveKit官方文档的DataPacket参数格式"""
             try:
-                logger.info(f"🚨 CRITICAL: data_received参数数量: {len(args)}")
-                logger.info(f"🚨 CRITICAL: 参数类型: {[type(arg) for arg in args]}")
-                logger.info(f"🚨 CRITICAL: kwargs: {kwargs}")
+                # 根据调试结果，LiveKit传递单个DataPacket对象
+                data = data_packet.data
+                participant = data_packet.participant
                 
-                # 根据参数数量动态处理
-                if len(args) == 1:
-                    # 单个事件对象
-                    event = args[0]
-                    data = event.data if hasattr(event, 'data') else event
-                    participant = event.participant if hasattr(event, 'participant') else None
-                elif len(args) == 2:
-                    # data, participant
-                    data, participant = args
-                elif len(args) == 3:
-                    # data, kind, participant
-                    data, kind, participant = args
-                else:
-                    logger.error(f"❌ 未知的参数格式: {len(args)} 个参数")
-                    return
-                
-                logger.info(f"🚨 CRITICAL: 提取的数据长度: {len(data) if data else 0}")
-                logger.info(f"🚨 CRITICAL: 参与者: {participant.identity if participant and hasattr(participant, 'identity') else 'None'}")
+                logger.info(f"[LOG][data-received] 收到数据包: 长度={len(data)}, 参与者={participant.identity}")
                 
                 asyncio.create_task(handle_data_received_async(data, participant))
             except Exception as e:
