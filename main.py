@@ -19,8 +19,7 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext, 
-    WorkerOptions,
-    WorkerConfig,
+    WorkerOptions, 
     cli, 
     JobProcess,
     AutoSubscribe
@@ -476,11 +475,6 @@ def main():
     
     # 配置LiveKit Agent Worker
     logger.info("⚡ 启动LiveKit Agent Worker...")
-    
-    # 配置Worker负载阈值，防止Agent在资源占用稍高时被标记为unavailable
-    config = WorkerConfig(max_load=1.5)
-    logger.info(f"🔧 Worker配置: max_load={config.max_load} (默认0.75已提升)")
-    
     opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
@@ -488,7 +482,7 @@ def main():
     )
     
     # 运行Agent Worker
-    cli.run_app(opts, config=config)
+    cli.run_app(opts)
 
 if __name__ == "__main__":
     main() 
