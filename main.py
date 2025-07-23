@@ -249,9 +249,37 @@ async def entrypoint(ctx: JobContext):
                 logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
         
         @ctx.room.on("data_received")
-        def handle_data_received(data: bytes, kind, participant):
-            """同步回调包装器 - 符合LiveKit官方文档的三参数签名 (data, kind, participant)"""
-            asyncio.create_task(handle_data_received_async(data, participant))
+        def handle_data_received(*args, **kwargs):
+            """同步回调包装器 - 使用*args动态接收参数"""
+            try:
+                logger.info(f"🚨 CRITICAL: data_received参数数量: {len(args)}")
+                logger.info(f"🚨 CRITICAL: 参数类型: {[type(arg) for arg in args]}")
+                logger.info(f"🚨 CRITICAL: kwargs: {kwargs}")
+                
+                # 根据参数数量动态处理
+                if len(args) == 1:
+                    # 单个事件对象
+                    event = args[0]
+                    data = event.data if hasattr(event, 'data') else event
+                    participant = event.participant if hasattr(event, 'participant') else None
+                elif len(args) == 2:
+                    # data, participant
+                    data, participant = args
+                elif len(args) == 3:
+                    # data, kind, participant
+                    data, kind, participant = args
+                else:
+                    logger.error(f"❌ 未知的参数格式: {len(args)} 个参数")
+                    return
+                
+                logger.info(f"🚨 CRITICAL: 提取的数据长度: {len(data) if data else 0}")
+                logger.info(f"🚨 CRITICAL: 参与者: {participant.identity if participant and hasattr(participant, 'identity') else 'None'}")
+                
+                asyncio.create_task(handle_data_received_async(data, participant))
+            except Exception as e:
+                logger.error(f"❌ 处理data_received事件失败: {e}")
+                import traceback
+                logger.error(f"错误详情:\n{traceback.format_exc()}")
         
         @ctx.room.on("track_subscribed")
         def on_track_subscribed(track, publication, participant):
