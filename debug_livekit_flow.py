@@ -14,7 +14,6 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-from livekit import Track
 
 # 配置详细日志
 logging.basicConfig(
@@ -180,11 +179,8 @@ def create_debug_agent_session():
                 debugger.stats["audio_track_received"] = True
                 
                 # 如果是音频轨道，设置音频帧处理器
-                if track.kind == Track.Kind.AUDIO:
-                    print(f"🎧 音频轨道已订阅: {track.kind}")
+                if track.kind == "audio":
                     self._setup_audio_frame_handler(track)
-                else:
-                    print(f"📹 非音频轨道: {track.kind}")
             
             @self.original_session.on("track_unsubscribed")
             def on_track_unsubscribed(track, publication, participant):
