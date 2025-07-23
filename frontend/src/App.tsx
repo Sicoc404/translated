@@ -69,7 +69,9 @@ function LiveKitRoomComponents({
     });
 
     // 监听数据接收
+    console.log('🚨 CRITICAL: 正在绑定 DataReceived 事件监听器');
     room.on(RoomEvent.DataReceived, handleDataReceived);
+    console.log('🚨 CRITICAL: DataReceived 事件监听器已绑定');
 
     room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
       console.log('🔗 房间连接状态变化:', state);
@@ -216,6 +218,24 @@ export default function PrymeUI() {
         setIsTranslating(true);
         setSubtitle('翻译模式已启动，请开始说话...');
 
+        // 🚨 测试：发送一个测试数据给自己
+        setTimeout(async () => {
+          try {
+            const testMessage = {
+              type: 'translation_stream',
+              text: 'TEST MESSAGE',
+              chunk: 'TEST',
+              is_final: false,
+              timestamp: Date.now()
+            };
+            const testData = new TextEncoder().encode(JSON.stringify(testMessage));
+            await room.localParticipant.publishData(testData, { reliable: true });
+            console.log('🚨 CRITICAL: 测试数据已发送');
+          } catch (error) {
+            console.error('🚨 CRITICAL: 测试数据发送失败:', error);
+          }
+        }, 2000);
+
       } else {
         console.log('[LOG][rpc-call] 停止翻译模式');
 
@@ -318,7 +338,9 @@ export default function PrymeUI() {
       });
 
       // 监听数据接收
+      console.log('🚨 CRITICAL: 正在绑定 DataReceived 事件监听器 (第二处)');
       room.on(RoomEvent.DataReceived, handleDataReceived);
+      console.log('🚨 CRITICAL: DataReceived 事件监听器已绑定 (第二处)');
 
       room.on(RoomEvent.ConnectionStateChanged, (state: any) => {
         console.log('🔗 房间连接状态变化:', state);
@@ -439,6 +461,11 @@ export default function PrymeUI() {
 
   // 处理数据消息 - 支持流式翻译事件
   const handleDataReceived = (e: any) => {
+    // 🚨 强制日志 - 确认函数被调用
+    console.log('🚨 CRITICAL: handleDataReceived 被调用了！', e);
+    console.log('🚨 CRITICAL: 参与者身份:', e.participant?.identity);
+    console.log('🚨 CRITICAL: 数据长度:', e.payload?.length);
+
     try {
       const decoder = new TextDecoder();
       const message = decoder.decode(e.payload);
@@ -844,9 +871,9 @@ export default function PrymeUI() {
                 background: 'rgba(255, 255, 255, 0.1)',
                 borderRadius: '6px',
                 borderLeft: `3px solid ${event.type === 'translation_stream' ? '#fbbf24' :
-                    event.type === 'translation' ? '#10b981' :
-                      event.type === 'transcript' ? '#3b82f6' :
-                        event.type === 'translation_status' ? '#8b5cf6' : '#6b7280'
+                  event.type === 'translation' ? '#10b981' :
+                    event.type === 'transcript' ? '#3b82f6' :
+                      event.type === 'translation_status' ? '#8b5cf6' : '#6b7280'
                   }`
               }}>
                 <div style={{ fontWeight: 'bold', color: '#fbbf24' }}>
