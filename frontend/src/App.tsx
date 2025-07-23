@@ -172,8 +172,13 @@ export default function PrymeUI() {
 
   // 控制翻译开始/停止
   const toggleTranslation = async () => {
+    // 🚨 强制日志 - 确认按钮被点击
+    console.log('🚨 CRITICAL: toggleTranslation 按钮被点击了！');
+    console.log('🚨 CRITICAL: isConnected =', isConnected);
+    console.log('🚨 CRITICAL: roomRef.current =', !!roomRef.current);
+    
     if (!isConnected || !roomRef.current) {
-      console.error('房间未连接');
+      console.error('🚨 CRITICAL: 房间未连接，isConnected =', isConnected, 'roomRef =', !!roomRef.current);
       alert('请先连接到房间');
       return;
     }
@@ -209,10 +214,8 @@ export default function PrymeUI() {
         const encoder = new TextEncoder();
         const data = encoder.encode(JSON.stringify(controlMessage));
 
-        // 广播数据到房间内所有参与者
-        await room.localParticipant.publishData(data, {
-          reliable: true
-        });
+        // 广播数据到房间内所有参与者 - 修复LiveKit数据发送格式
+        await room.localParticipant.publishData(data, DataPacket_Kind.RELIABLE);
 
         console.log('[LOG][rpc-call] 翻译开始指令已广播');
         setIsTranslating(true);
@@ -229,7 +232,7 @@ export default function PrymeUI() {
               timestamp: Date.now()
             };
             const testData = new TextEncoder().encode(JSON.stringify(testMessage));
-            await room.localParticipant.publishData(testData, { reliable: true });
+            await room.localParticipant.publishData(testData, DataPacket_Kind.RELIABLE);
             console.log('🚨 CRITICAL: 测试数据已发送');
           } catch (error) {
             console.error('🚨 CRITICAL: 测试数据发送失败:', error);
@@ -249,9 +252,7 @@ export default function PrymeUI() {
         const encoder = new TextEncoder();
         const data = encoder.encode(JSON.stringify(controlMessage));
 
-        await room.localParticipant.publishData(data, {
-          reliable: true
-        });
+        await room.localParticipant.publishData(data, DataPacket_Kind.RELIABLE);
 
         console.log('[LOG][rpc-call] 翻译停止指令已广播');
         setIsTranslating(false);
