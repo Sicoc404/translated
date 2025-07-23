@@ -24,6 +24,7 @@ from livekit.agents import (
     JobProcess,
     AutoSubscribe
 )
+from livekit import Track
 from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
 # 加载环境变量
@@ -263,7 +264,8 @@ async def entrypoint(ctx: JobContext):
             print(f"🎧 订阅了音轨: {track.kind}, 来自: {participant.identity}", file=sys.stdout, flush=True)
             logger.info(f"🎧 TRACK_SUBSCRIBED: kind={track.kind}, participant={participant.identity}, publication_sid={publication.sid if publication else 'N/A'}")
             
-            if track.kind == "audio":
+            if track.kind == Track.Kind.AUDIO:
+                print(f"🎧 音频轨道已订阅: {track.kind}")
                 logger.info(f"[LOG][audio-in] 开始监听音频输入...")
                 print(f"🔊 音频轨道已订阅，开始处理音频流", file=sys.stdout, flush=True)
                 
@@ -277,6 +279,7 @@ async def entrypoint(ctx: JobContext):
                 except Exception as track_info_error:
                     logger.warning(f"⚠️ 获取音频轨道详情失败: {track_info_error}")
             else:
+                print(f"📹 非音频轨道: {track.kind}")
                 logger.info(f"📹 非音频轨道: {track.kind}")
                 print(f"📹 订阅了非音频轨道: {track.kind}", file=sys.stdout, flush=True)
         
@@ -372,7 +375,7 @@ async def entrypoint(ctx: JobContext):
                     for track_pub in participant.tracks.values():
                         if track_pub.track:
                             logger.info(f"[LOG][audio-in] 发现现有轨道: {track_pub.track.kind}")
-                            if track_pub.track.kind == "audio":
+                            if track_pub.track.kind == Track.Kind.AUDIO:
                                 logger.info(f"[LOG][audio-in] 音频轨道已就绪")
             else:
                 logger.info(f"[LOG][participants] 房间暂无远程参与者或无法访问参与者列表")
