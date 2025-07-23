@@ -70,16 +70,68 @@ LANGUAGE_CONFIG = {
 # 源语言配置（讲者语言）
 SOURCE_LANGUAGE = "zh"  # 中文
 
+class TTSWithRetry:
+    """
+    TTS包装器，添加重试机制和错误处理
+    """
+    
+    def __init__(self, base_tts, max_retries: int = 3):
+        self.base_tts = base_tts
+        self.max_retries = max_retries
+        logger.info(f"🔄 TTS重试包装器初始化 - 最大重试次数: {max_retries}")
+    
+    async def synthesize(self, text: str, *args, **kwargs):
+        """
+        合成语音，带重试机制
+        """
+        retry_count = 0
+        last_error = None
+        
+        while retry_count < self.max_retries:
+            try:
+                logger.debug(f"🔊 TTS合成尝试 {retry_count + 1}/{self.max_retries}: '{text[:50]}...'")
+                result = await self.base_tts.synthesize(text, *args, **kwargs)
+                
+                if retry_count > 0:
+                    logger.info(f"✅ TTS合成成功 (重试 {retry_count} 次)")
+                
+                return result
+                
+            except Exception as e:
+                retry_count += 1
+                last_error = e
+                logger.warning(f"⚠️ TTS合成失败 (尝试 {retry_count}/{self.max_retries}): {e}")
+                
+                if retry_count >= self.max_retries:
+                    logger.error(f"❌ TTS合成最终失败: {last_error}")
+                    raise last_error
+                
+                # 指数退避
+                await asyncio.sleep(0.5 * retry_count)
+        
+        raise last_error
+    
+    def __getattr__(self, name):
+        """代理所有其他方法到原始TTS"""
+        return getattr(self.base_tts, name)
+
 class CustomGroqLLM(llm.LLM):
     """
     自定义Groq LLM实现，使用官方groq客户端
+    支持流式翻译片段回调
     """
     
     def __init__(self, model: str = "llama3-8b-8192"):
         super().__init__()
         self._model = model
         self._client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        self._stream_callback = None
         logger.info(f"🧠 初始化官方Groq客户端 - 模型: {model}")
+    
+    def set_stream_callback(self, callback):
+        """设置流式翻译片段回调函数"""
+        self._stream_callback = callback
+        logger.info("✅ 已设置Groq LLM流式回调")
     
     def chat(
         self,
@@ -97,21 +149,28 @@ class CustomGroqLLM(llm.LLM):
         """
         logger.info(f"🧠 Groq chat调用 - tools: {len(tools) if tools else 0}, tool_choice: {tool_choice}")
         
-        return CustomGroqLLMStream(
+        stream = CustomGroqLLMStream(
             llm_instance=self,
             client=self._client,
             model=self._model,
             chat_ctx=chat_ctx,
             tools=tools,
             tool_choice=tool_choice,
-            temperature=temperature or 0.7,
+            temperature=temperature or 0.2,  # 降低默认temperature
             conn_options=conn_options,
         )
+        
+        # 传递流式回调
+        if self._stream_callback:
+            stream.set_stream_callback(self._stream_callback)
+        
+        return stream
 
 class CustomGroqLLMStream(llm.LLMStream):
     """
     自定义Groq LLM流实现
     实现LiveKit Agents 1.1.7 LLMStream抽象方法
+    支持实时流式翻译片段推送
     """
     
     def __init__(
@@ -122,7 +181,7 @@ class CustomGroqLLMStream(llm.LLMStream):
         chat_ctx: llm.ChatContext,
         tools: list | None = None,
         tool_choice: str | None = None,
-        temperature: float = 0.7,
+        temperature: float = 0.2,  # 降低temperature提高翻译一致性
         conn_options: dict | None = None,
     ):
         super().__init__(
@@ -137,6 +196,11 @@ class CustomGroqLLMStream(llm.LLMStream):
         self._tools = tools
         self._tool_choice = tool_choice
         self._conn_options = conn_options
+        self._stream_callback = None  # 用于实时推送翻译片段
+    
+    def set_stream_callback(self, callback):
+        """设置流式翻译片段回调函数"""
+        self._stream_callback = callback
         
     async def push_event(self, chunk: llm.ChatChunk) -> None:
         """
@@ -280,6 +344,14 @@ class CustomGroqLLMStream(llm.LLMStream):
                     "role": "system",
                     "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
                 }]
+            
+            # 无条件确保系统指令存在 - 修复问题1
+            has_system_message = any(msg.get('role') == 'system' for msg in validated_messages)
+            if not has_system_message:
+                validated_messages.insert(0, {
+                    "role": "system",
+                    "content": "你是一个专业的实时翻译助手，将中文翻译成目标语言。"
+                })
                 
             messages = validated_messages
             
@@ -297,13 +369,15 @@ class CustomGroqLLMStream(llm.LLMStream):
                     last_user_msg = user_messages[-1]
                     logger.info(f"🎯 最后用户消息完整内容: \"{last_user_msg['content']}\"")
             
-            # 准备API调用参数
+            # 准备API调用参数 - 优化翻译质量和响应速度
             api_params = {
                 "model": self._model,
                 "messages": messages,
-                "temperature": self._temperature,
-                "max_tokens": 1000,
+                "temperature": self._temperature,  # 已调整为0.2
+                "max_tokens": 2048,  # 增加token限制
                 "stream": True,  # 启用流式模式
+                "top_p": 0.9,  # 添加top_p参数提高翻译质量
+                "frequency_penalty": 0.1,  # 减少重复内容
             }
             
             # 调试：确保API参数格式正确
@@ -318,11 +392,26 @@ class CustomGroqLLMStream(llm.LLMStream):
             if self._tool_choice:
                 logger.info(f"🎯 工具选择: {self._tool_choice}")
             
-            # 调用官方Groq客户端流式API
+            # 调用官方Groq客户端流式API - 添加重试机制
             logger.info(f"📡 调用Groq流式API - 模型: {self._model}")
-            stream = self._client.chat.completions.create(**api_params)
             
-            # 处理流式响应
+            max_retries = 3
+            retry_count = 0
+            stream = None
+            
+            while retry_count < max_retries:
+                try:
+                    stream = self._client.chat.completions.create(**api_params)
+                    break
+                except Exception as api_error:
+                    retry_count += 1
+                    logger.warning(f"⚠️ Groq API调用失败 (尝试 {retry_count}/{max_retries}): {api_error}")
+                    if retry_count >= max_retries:
+                        logger.error(f"❌ Groq API调用最终失败: {api_error}")
+                        raise
+                    await asyncio.sleep(0.5 * retry_count)  # 指数退避
+            
+            # 处理流式响应 - 修复重复累积问题
             full_content = ""
             for chunk in stream:
                 if chunk.choices:
@@ -330,15 +419,15 @@ class CustomGroqLLMStream(llm.LLMStream):
                     if hasattr(choice, 'delta') and choice.delta:
                         # 处理流式delta内容
                         delta_content = choice.delta.content or ""
-                        full_content += delta_content
                         
                         if delta_content:
-                            logger.debug(f"🔄 Groq流式片段: '{delta_content}'")
+                            # 修复：只累积一次，避免重复
                             full_content += delta_content
+                            logger.debug(f"🔄 Groq流式片段: '{delta_content}' (累积长度: {len(full_content)})")
                             
                             # 调试：记录翻译片段
-                            if DEBUG_ENABLED and len(full_content) > 10:
-                                debug_translation(full_content, "zh", "target")
+                            if DEBUG_ENABLED:
+                                debug_translation(delta_content, "zh", "target")
                             
                             # 创建符合LiveKit格式的ChatChunk并推送事件
                             try:
@@ -366,7 +455,14 @@ class CustomGroqLLMStream(llm.LLMStream):
                                 
                                 # 使用自定义的push_event方法推送事件
                                 await self.push_event(chat_chunk)
-                                logger.debug(f"✅ ChatChunk推送成功: ID={chunk_id}")
+                                logger.debug(f"✅ ChatChunk推送成功: ID={chunk_id}, 内容: '{delta_content}'")
+                                
+                                # 如果有流式回调，立即推送翻译片段
+                                if self._stream_callback:
+                                    try:
+                                        await self._stream_callback(delta_content, is_final=False)
+                                    except Exception as callback_error:
+                                        logger.warning(f"⚠️ 流式回调失败: {callback_error}")
                             except Exception as chunk_error:
                                 logger.error(f"❌ 创建ChatChunk失败: {chunk_error}")
                                 debug_error(f"创建ChatChunk失败: {chunk_error}", "CustomGroqLLMStream")
@@ -375,6 +471,13 @@ class CustomGroqLLMStream(llm.LLMStream):
                                 # 继续处理下一个chunk，不中断整个流程
             
             logger.info(f"🌍 Groq完整翻译结果: '{full_content}'")
+            
+            # 发送最终完整翻译结果
+            if self._stream_callback and full_content.strip():
+                try:
+                    await self._stream_callback(full_content, is_final=True)
+                except Exception as callback_error:
+                    logger.warning(f"⚠️ 最终结果回调失败: {callback_error}")
             
             # 调试：记录完整翻译结果
             if DEBUG_ENABLED and full_content.strip():
@@ -470,13 +573,16 @@ def create_translation_components(language: str) -> Tuple[Any, Any, Any, Any]:
         logger.error(f"❌ 自定义Groq LLM初始化失败: {e}")
         raise
     
-    # TTS配置 - 设置为目标语言
+    # TTS配置 - 设置为目标语言，添加重试机制
     try:
         logger.info(f"🔊 初始化TTS (Cartesia {language_name})...")
-        tts = cartesia.TTS(
+        base_tts = cartesia.TTS(
             model="sonic-multilingual",  # 使用多语言模型
             voice=language_info["voice_id"],
         )
+        
+        # 包装TTS以添加重试机制
+        tts = TTSWithRetry(base_tts, max_retries=3)
         logger.info(f"✅ TTS初始化成功 - 模型: sonic-multilingual, 语音ID: {language_info['voice_id']}")
     except Exception as e:
         logger.error(f"❌ TTS初始化失败: {e}")
