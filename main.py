@@ -304,55 +304,151 @@ async def entrypoint(ctx: JobContext):
             tts=tts,
         )
         
-        # 添加AgentSession事件监听 - 使用同步回调
+        # 添加AgentSession事件监听 - 支持流式实时处理
+        
+        # 用于累积部分翻译结果的缓冲区
+        partial_translation_buffer = ""
+        
         async def on_user_speech_async(event):
-            """异步处理用户语音转写结果"""
+            """异步处理用户语音转写结果 - 支持实时和最终结果"""
             transcript = event.alternatives[0].text if event.alternatives else ""
             confidence = event.alternatives[0].confidence if event.alternatives else 0.0
-            logger.info(f"[LOG][speech-in] 用户语音转写: '{transcript}' (置信度: {confidence:.2f})")
+            is_final = getattr(event, 'is_final', True)  # 检查是否为最终结果
             
-            # 发送转写结果到前端
+            logger.info(f"[LOG][speech-in] 用户语音转写: '{transcript}' (置信度: {confidence:.2f}, 最终: {is_final})")
+            
+            # 发送转写结果到前端 - 区分实时和最终结果
             try:
                 transcript_data = json.dumps({
                     'type': 'transcript',
                     'text': transcript,
                     'confidence': confidence,
                     'language': 'zh',
+                    'is_final': is_final,
                     'timestamp': asyncio.get_event_loop().time()
                 }).encode('utf-8')
                 await ctx.room.local_participant.publish_data(transcript_data)
-                logger.info(f"[LOG][subtitles-send] 转写结果已发送: {transcript}")
+                logger.info(f"[LOG][subtitles-send] 转写结果已发送: {transcript} (最终: {is_final})")
             except Exception as e:
                 logger.error(f"❌ 发送转写结果失败: {e}")
         
+        # 监听实时语音转写事件（包括部分结果）
         @session.on("user_speech_committed")
-        def on_user_speech(event):
-            """同步回调包装器"""
+        def on_user_speech_committed(event):
+            """处理最终确认的语音转写"""
             asyncio.create_task(on_user_speech_async(event))
         
+        # 尝试监听部分语音结果（如果LiveKit支持）
+        try:
+            @session.on("user_speech_interim")
+            def on_user_speech_interim(event):
+                """处理部分语音转写结果"""
+                asyncio.create_task(on_user_speech_async(event))
+            logger.info("✅ 已启用实时语音转写监听")
+        except Exception as e:
+            logger.warning(f"⚠️ 无法启用实时语音转写监听: {e}")
+        
         async def on_agent_speech_async(event):
-            """异步处理Agent语音合成结果"""
-            translation = event.alternatives[0].text if event.alternatives else ""
-            logger.info(f"[LOG][speech-out] Agent翻译输出: '{translation}'")
+            """异步处理Agent语音合成结果 - 支持流式翻译片段"""
+            nonlocal partial_translation_buffer
             
-            # 发送翻译结果到前端
-            try:
-                translation_data = json.dumps({
-                    'type': 'translation',
-                    'text': translation,
-                    'source_language': 'zh',
-                    'target_language': target_language,
-                    'timestamp': asyncio.get_event_loop().time()
-                }).encode('utf-8')
-                await ctx.room.local_participant.publish_data(translation_data)
-                logger.info(f"[LOG][subtitles-send] 翻译结果已发送: {translation}")
-            except Exception as e:
-                logger.error(f"❌ 发送翻译结果失败: {e}")
+            # 获取翻译片段
+            translation_chunk = ""
+            if hasattr(event, 'alternatives') and event.alternatives:
+                translation_chunk = event.alternatives[0].text or ""
+            elif hasattr(event, 'text'):
+                translation_chunk = event.text or ""
+            
+            is_final = getattr(event, 'is_final', True)
+            
+            if translation_chunk:
+                # 累积翻译片段
+                if not is_final:
+                    partial_translation_buffer += translation_chunk
+                    current_translation = partial_translation_buffer
+                else:
+                    # 最终结果，清空缓冲区
+                    current_translation = partial_translation_buffer + translation_chunk
+                    partial_translation_buffer = ""
+                
+                logger.info(f"[LOG][speech-out] Agent翻译输出: '{translation_chunk}' (累积: '{current_translation}', 最终: {is_final})")
+                
+                # 实时发送翻译结果到前端
+                try:
+                    translation_data = json.dumps({
+                        'type': 'translation',
+                        'text': current_translation,
+                        'chunk': translation_chunk,
+                        'source_language': 'zh',
+                        'target_language': target_language,
+                        'is_final': is_final,
+                        'timestamp': asyncio.get_event_loop().time()
+                    }).encode('utf-8')
+                    await ctx.room.local_participant.publish_data(translation_data)
+                    logger.info(f"[LOG][subtitles-send] 翻译结果已发送: '{translation_chunk}' (最终: {is_final})")
+                except Exception as e:
+                    logger.error(f"❌ 发送翻译结果失败: {e}")
         
         @session.on("agent_speech_committed")
-        def on_agent_speech(event):
-            """同步回调包装器"""
+        def on_agent_speech_committed(event):
+            """处理最终确认的翻译结果"""
             asyncio.create_task(on_agent_speech_async(event))
+        
+        # 尝试监听流式翻译片段（如果LiveKit支持）
+        try:
+            @session.on("agent_speech_interim")
+            def on_agent_speech_interim(event):
+                """处理流式翻译片段"""
+                asyncio.create_task(on_agent_speech_async(event))
+            logger.info("✅ 已启用流式翻译片段监听")
+        except Exception as e:
+            logger.warning(f"⚠️ 无法启用流式翻译片段监听: {e}")
+        
+        # 监听LLM流式输出（直接从ChatChunk获取）
+        async def on_llm_stream_chunk(chunk_content: str, is_final: bool = False):
+            """处理LLM流式输出片段"""
+            nonlocal partial_translation_buffer
+            
+            if chunk_content:
+                # 累积翻译片段
+                if not is_final:
+                    partial_translation_buffer += chunk_content
+                    current_translation = partial_translation_buffer
+                else:
+                    current_translation = partial_translation_buffer + chunk_content
+                    partial_translation_buffer = ""
+                
+                logger.info(f"[LOG][llm-stream] LLM流式片段: '{chunk_content}' (累积: '{current_translation}', 最终: {is_final})")
+                
+                # 实时发送翻译片段到前端
+                try:
+                    translation_data = json.dumps({
+                        'type': 'translation_stream',
+                        'text': current_translation,
+                        'chunk': chunk_content,
+                        'source_language': 'zh',
+                        'target_language': target_language,
+                        'is_final': is_final,
+                        'timestamp': asyncio.get_event_loop().time()
+                    }).encode('utf-8')
+                    await ctx.room.local_participant.publish_data(translation_data)
+                    logger.info(f"[LOG][subtitles-send] LLM流式片段已发送: '{chunk_content}' (最终: {is_final})")
+                except Exception as e:
+                    logger.error(f"❌ 发送LLM流式片段失败: {e}")
+        
+        # 连接流式翻译回调
+        try:
+            # 获取LLM实例并设置流式回调
+            if hasattr(session, 'llm') and hasattr(session.llm, 'set_stream_callback'):
+                session.llm.set_stream_callback(on_llm_stream_chunk)
+                logger.info("✅ 已连接LLM流式翻译回调")
+            elif hasattr(llm, 'set_stream_callback'):
+                llm.set_stream_callback(on_llm_stream_chunk)
+                logger.info("✅ 已连接LLM流式翻译回调")
+            else:
+                logger.warning("⚠️ 无法连接LLM流式翻译回调")
+        except Exception as callback_error:
+            logger.warning(f"⚠️ 设置流式翻译回调失败: {callback_error}")
         
         # 启动Agent会话 - 正确传入agent和room参数
         logger.info(f"▶️ 启动 {language_name} 翻译会话...")
