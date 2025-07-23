@@ -180,7 +180,10 @@ def create_debug_agent_session():
                 
                 # 如果是音频轨道，设置音频帧处理器
                 if track.kind == "audio":
+                    print(f"🎧 音频轨道已订阅: {track.kind}")
                     self._setup_audio_frame_handler(track)
+                else:
+                    print(f"📹 非音频轨道: {track.kind}")
             
             @self.original_session.on("track_unsubscribed")
             def on_track_unsubscribed(track, publication, participant):
