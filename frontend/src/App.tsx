@@ -106,9 +106,13 @@ export default function PrymeUI() {
   const [isConnected, setIsConnected] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [subtitle, setSubtitle] = useState('');
+  const [partialSubtitle, setPartialSubtitle] = useState(''); // 用于累积部分翻译结果
+  const [finalSubtitle, setFinalSubtitle] = useState(''); // 用于显示最终翻译结果
   const [volume, setVolume] = useState(0.8);
   const [isPlaying, setIsPlaying] = useState(true);
   const [agentParticipant, setAgentParticipant] = useState<any>(null);
+  const [debugEvents, setDebugEvents] = useState<any[]>([]); // 用于调试事件历史
+  const [showDebugPanel, setShowDebugPanel] = useState(false); // 控制调试面板显示
 
   // 引用
   const roomRef = useRef<any>(null);
@@ -131,7 +135,7 @@ export default function PrymeUI() {
       console.log(`正在获取房间 ${roomName} 的token...`);
 
       // 调用后端API获取token
-      const tokenServerUrl = import.meta.env.VITE_TOKEN_SERVER_URL || 'https://translated-backed-qmuq.onrender.com';
+      const tokenServerUrl = (import.meta as any).env.VITE_TOKEN_SERVER_URL || 'https://translated-backed-qmuq.onrender.com';
       const response = await fetch(`${tokenServerUrl}/api/token`, {
         method: 'POST',
         headers: {
@@ -166,48 +170,87 @@ export default function PrymeUI() {
 
   // 控制翻译开始/停止
   const toggleTranslation = async () => {
-    if (!isConnected || !roomRef.current || !agentParticipant) {
-      console.error('房间未连接或未找到翻译代理');
+    if (!isConnected || !roomRef.current) {
+      console.error('房间未连接');
+      alert('请先连接到房间');
       return;
     }
 
     try {
       const room = roomRef.current;
 
+      // 检查麦克风权限和状态
+      const micTrack = room.localParticipant.getTrack(Track.Source.Microphone);
+      if (!micTrack || !micTrack.track || micTrack.track.isMuted) {
+        console.warn('⚠️ 麦克风未启用或被静音');
+        alert('请确保麦克风已启用且未被静音');
+        return;
+      }
+
+      console.log('🎤 麦克风状态检查通过:', {
+        hasTrack: !!micTrack,
+        enabled: !micTrack.track.isMuted,
+        trackSid: micTrack.trackSid
+      });
+
       if (!isTranslating) {
-        console.log('[LOG][rpc-call] 发送翻译开始指令到 Agent');
-        const encoder = new TextEncoder();
-        const data = encoder.encode(JSON.stringify({
+        console.log('[LOG][rpc-call] 开始翻译模式');
+
+        // 简化数据发送，不指定特定的 Agent 接收者
+        const controlMessage = {
           type: 'translation_control',
           action: 'start',
-          timestamp: Date.now()
-        }));
+          timestamp: Date.now(),
+          room: room.name
+        };
 
-        await room.localParticipant.publishData(data, {
-          reliable: true,
-          destinationSids: [agentParticipant.sid]
-        });
-        console.log('[LOG][rpc-call] 翻译开始指令已发送');
-        setIsTranslating(true);
-      } else {
-        console.log('[LOG][rpc-call] 发送翻译停止指令到 Agent');
         const encoder = new TextEncoder();
-        const data = encoder.encode(JSON.stringify({
+        const data = encoder.encode(JSON.stringify(controlMessage));
+
+        // 广播数据到房间内所有参与者
+        await room.localParticipant.publishData(data, {
+          reliable: true
+        });
+
+        console.log('[LOG][rpc-call] 翻译开始指令已广播');
+        setIsTranslating(true);
+        setSubtitle('翻译模式已启动，请开始说话...');
+
+      } else {
+        console.log('[LOG][rpc-call] 停止翻译模式');
+
+        const controlMessage = {
           type: 'translation_control',
           action: 'stop',
-          timestamp: Date.now()
-        }));
+          timestamp: Date.now(),
+          room: room.name
+        };
+
+        const encoder = new TextEncoder();
+        const data = encoder.encode(JSON.stringify(controlMessage));
 
         await room.localParticipant.publishData(data, {
-          reliable: true,
-          destinationSids: [agentParticipant.sid]
+          reliable: true
         });
-        console.log('[LOG][rpc-call] 翻译停止指令已发送');
+
+        console.log('[LOG][rpc-call] 翻译停止指令已广播');
         setIsTranslating(false);
+        setSubtitle('翻译模式已停止');
       }
     } catch (error) {
       console.error('控制翻译失败:', error);
-      alert('控制翻译失败，请稍后重试');
+
+      // 提供更详细的错误信息
+      let errorMessage = '控制翻译失败';
+      if (error.message) {
+        errorMessage += ': ' + error.message;
+      }
+
+      // 重置状态
+      setIsTranslating(false);
+      setSubtitle('翻译控制失败，请重试');
+
+      alert(errorMessage + '。请检查网络连接并重试。');
     }
   };
 
@@ -394,39 +437,178 @@ export default function PrymeUI() {
     track.detach();
   };
 
-  // 处理数据消息
+  // 处理数据消息 - 支持流式翻译事件
   const handleDataReceived = (e: any) => {
     try {
       const decoder = new TextDecoder();
       const message = decoder.decode(e.payload);
+
+      // 增强调试日志
       console.log('[LOG][subtitles-recv] 收到数据消息:', {
         sender: e.participant?.identity,
         messageLength: message.length,
-        message: message.substring(0, 100) + (message.length > 100 ? '...' : '')
+        message: message.substring(0, 200) + (message.length > 200 ? '...' : ''),
+        timestamp: new Date().toISOString()
       });
 
       // 尝试解析JSON
       try {
         const jsonData = JSON.parse(message);
-        console.log('[LOG][subtitles-recv] 解析JSON数据:', jsonData);
 
-        if (jsonData.type === 'translation' || jsonData.type === 'transcript') {
-          const subtitleText = jsonData.text || jsonData.content || message;
-          setSubtitle(subtitleText);
-          console.log('[LOG][subtitles-recv] 更新字幕:', subtitleText);
-        } else if (jsonData.type === 'translation_status') {
-          console.log('[LOG][subtitles-recv] 翻译状态更新:', jsonData.status);
-          setSubtitle(`翻译状态: ${jsonData.status} (${jsonData.language || ''})`);
-        } else {
-          setSubtitle(message);
+        // 增强调试日志 - 显示事件类型
+        const eventInfo = {
+          type: jsonData.type,
+          text: jsonData.text?.substring(0, 100) + (jsonData.text?.length > 100 ? '...' : ''),
+          chunk: jsonData.chunk,
+          is_final: jsonData.is_final,
+          source_language: jsonData.source_language,
+          target_language: jsonData.target_language,
+          confidence: jsonData.confidence,
+          timestamp: jsonData.timestamp,
+          received_at: new Date().toISOString()
+        };
+
+        console.log('[LOG][subtitles-recv] 解析JSON数据:', eventInfo);
+
+        // 添加到调试事件历史（保留最近20个事件）
+        setDebugEvents(prev => {
+          const newEvents = [eventInfo, ...prev].slice(0, 20);
+          return newEvents;
+        });
+
+        // 处理流式翻译事件
+        if (jsonData.type === 'translation_stream') {
+          handleTranslationStream(jsonData);
+        }
+        // 处理传统翻译事件（向后兼容）
+        else if (jsonData.type === 'translation') {
+          handleTranslation(jsonData);
+        }
+        // 处理转写事件
+        else if (jsonData.type === 'transcript') {
+          handleTranscript(jsonData);
+        }
+        // 处理翻译状态事件
+        else if (jsonData.type === 'translation_status') {
+          handleTranslationStatus(jsonData);
+        }
+        // 处理未知事件类型
+        else {
+          console.log('[LOG][subtitles-recv] 未知事件类型:', jsonData.type);
+          // 作为普通文本处理
+          if (jsonData.text && jsonData.text.trim()) {
+            setSubtitle(jsonData.text);
+          } else {
+            setSubtitle(message);
+          }
         }
       } catch (parseError) {
         // 如果不是JSON，直接作为纯文本处理
         console.log('[LOG][subtitles-recv] 纯文本消息:', message);
-        setSubtitle(message);
+        if (message && message.trim()) {
+          setSubtitle(message);
+        }
       }
     } catch (error) {
       console.error('❌ 处理数据消息失败:', error);
+    }
+  };
+
+  // 处理流式翻译事件
+  const handleTranslationStream = (data: any) => {
+    const text = data.text || '';
+    const chunk = data.chunk || '';
+    const isFinal = data.is_final || false;
+
+    console.log('[LOG][translation-stream] 处理流式翻译:', {
+      text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      chunk: chunk,
+      is_final: isFinal,
+      text_length: text.length,
+      chunk_length: chunk.length
+    });
+
+    // 过滤空内容和无意义的短片段
+    if (!text || text.trim().length === 0) {
+      console.log('[LOG][translation-stream] 跳过空内容');
+      return;
+    }
+
+    // 过滤过短的片段（但保留有意义的标点符号）
+    if (text.trim().length === 1 && !/[。！？，、；：]/.test(text.trim())) {
+      console.log('[LOG][translation-stream] 跳过过短片段:', text);
+      return;
+    }
+
+    if (isFinal) {
+      // 最终结果 - 更新最终字幕并清空部分字幕
+      setFinalSubtitle(text);
+      setPartialSubtitle('');
+      setSubtitle(text);
+      console.log('[LOG][translation-stream] 设置最终翻译结果:', text);
+    } else {
+      // 部分结果 - 累积显示
+      setPartialSubtitle(text);
+      setSubtitle(text + ' ⏳'); // 添加处理中指示器
+      console.log('[LOG][translation-stream] 更新部分翻译结果:', text);
+    }
+  };
+
+  // 处理传统翻译事件（向后兼容）
+  const handleTranslation = (data: any) => {
+    const text = data.text || data.content || '';
+
+    console.log('[LOG][translation] 处理传统翻译事件:', {
+      text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      source_language: data.source_language,
+      target_language: data.target_language
+    });
+
+    if (text && text.trim()) {
+      setFinalSubtitle(text);
+      setPartialSubtitle('');
+      setSubtitle(text);
+    }
+  };
+
+  // 处理转写事件
+  const handleTranscript = (data: any) => {
+    const text = data.text || data.content || '';
+    const isFinal = data.is_final !== undefined ? data.is_final : true;
+    const confidence = data.confidence || 0;
+
+    console.log('[LOG][transcript] 处理转写事件:', {
+      text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      is_final: isFinal,
+      confidence: confidence,
+      language: data.language
+    });
+
+    // 转写结果通常不直接显示为字幕，但可以用于调试
+    if (text && text.trim()) {
+      console.log('[LOG][transcript] 转写内容:', text);
+      // 可以选择是否显示转写结果
+      // setSubtitle(`[转写] ${text}${isFinal ? '' : ' ⏳'}`);
+    }
+  };
+
+  // 处理翻译状态事件
+  const handleTranslationStatus = (data: any) => {
+    const status = data.status || '';
+    const language = data.language || '';
+
+    console.log('[LOG][translation-status] 翻译状态更新:', {
+      status: status,
+      language: language
+    });
+
+    const statusMessage = `翻译状态: ${status}${language ? ` (${language})` : ''}`;
+    setSubtitle(statusMessage);
+
+    // 清空累积的字幕状态
+    if (status === 'stopped') {
+      setPartialSubtitle('');
+      setFinalSubtitle('');
     }
   };
 
@@ -441,6 +623,10 @@ export default function PrymeUI() {
     setIsConnected(false);
     setAgentParticipant(null);
     setSubtitle('');
+    setPartialSubtitle(''); // 清空部分字幕
+    setFinalSubtitle(''); // 清空最终字幕
+    setDebugEvents([]); // 清空调试事件历史
+    setShowDebugPanel(false); // 隐藏调试面板
     setIsTranslating(false);
   };
 
@@ -496,6 +682,14 @@ export default function PrymeUI() {
         transform: scale(2);
         opacity: 0;
       }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideIn {
+      from { transform: translateX(-20px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
     }
   `;
 
@@ -559,7 +753,10 @@ export default function PrymeUI() {
           position: 'absolute',
           top: '24px',
           left: '24px',
-          zIndex: 10
+          zIndex: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
         }}>
           <div style={{
             padding: '12px 24px',
@@ -583,7 +780,98 @@ export default function PrymeUI() {
             }}></div>
             <span>{isConnected ? 'LiveKit 已连接' : '未连接'}</span>
           </div>
+
+          {/* Debug Panel Toggle */}
+          {isConnected && (
+            <button
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              style={{
+                padding: '8px 16px',
+                background: 'rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(12px)',
+                color: 'white',
+                borderRadius: '9999px',
+                fontWeight: '500',
+                fontSize: '12px',
+                boxShadow: '0 5px 15px rgba(0, 0, 0, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }}
+            >
+              {showDebugPanel ? '隐藏调试' : '显示调试'} ({debugEvents.length})
+            </button>
+          )}
         </div>
+
+        {/* Debug Panel */}
+        {showDebugPanel && (
+          <div style={{
+            position: 'absolute',
+            top: '120px',
+            left: '24px',
+            width: '400px',
+            maxHeight: '300px',
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(12px)',
+            color: 'white',
+            borderRadius: '12px',
+            padding: '16px',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            overflowY: 'auto',
+            zIndex: 10,
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}>
+            <div style={{
+              fontWeight: 'bold',
+              marginBottom: '12px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+              paddingBottom: '8px'
+            }}>
+              事件调试面板 (最近 {debugEvents.length} 个事件)
+            </div>
+            {debugEvents.map((event, index) => (
+              <div key={index} style={{
+                marginBottom: '8px',
+                padding: '8px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '6px',
+                borderLeft: `3px solid ${event.type === 'translation_stream' ? '#fbbf24' :
+                    event.type === 'translation' ? '#10b981' :
+                      event.type === 'transcript' ? '#3b82f6' :
+                        event.type === 'translation_status' ? '#8b5cf6' : '#6b7280'
+                  }`
+              }}>
+                <div style={{ fontWeight: 'bold', color: '#fbbf24' }}>
+                  {event.type} {event.is_final ? '(final)' : '(partial)'}
+                </div>
+                <div style={{ marginTop: '4px' }}>
+                  文本: {event.text || '无'}
+                </div>
+                {event.chunk && (
+                  <div style={{ marginTop: '2px', color: '#a3a3a3' }}>
+                    片段: {event.chunk}
+                  </div>
+                )}
+                <div style={{ marginTop: '4px', color: '#a3a3a3', fontSize: '10px' }}>
+                  {new Date(event.received_at).toLocaleTimeString()}
+                </div>
+              </div>
+            ))}
+            {debugEvents.length === 0 && (
+              <div style={{ color: '#9ca3af', textAlign: 'center', padding: '20px' }}>
+                暂无事件数据
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Header with Logo */}
         <header style={{
@@ -800,19 +1088,105 @@ export default function PrymeUI() {
                     padding: '32px',
                     minHeight: '200px',
                     display: 'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center'
                   }}>
                     {subtitle ? (
-                      <div style={{ textAlign: 'center' }}>
-                        <p style={{ fontSize: '18px', color: '#1f2937', marginBottom: '8px' }}>{subtitle}</p>
-                        <p style={{ fontSize: '14px', color: '#6b7280' }}>当前语言: {selectedRoom.lang}</p>
+                      <div style={{ textAlign: 'center', width: '100%' }}>
+                        {/* 主字幕显示区域 */}
+                        <div style={{
+                          fontSize: '20px',
+                          color: '#1f2937',
+                          marginBottom: '16px',
+                          lineHeight: '1.6',
+                          minHeight: '60px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '16px',
+                          background: 'white',
+                          borderRadius: '12px',
+                          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                          border: partialSubtitle ? '2px solid #fbbf24' : '2px solid #e5e7eb'
+                        }}>
+                          <span>{subtitle}</span>
+                        </div>
+
+                        {/* 状态指示器 */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '16px',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '4px 12px',
+                            background: partialSubtitle ? '#fef3c7' : finalSubtitle ? '#d1fae5' : '#f3f4f6',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            color: partialSubtitle ? '#92400e' : finalSubtitle ? '#065f46' : '#6b7280'
+                          }}>
+                            <div style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              backgroundColor: partialSubtitle ? '#fbbf24' : finalSubtitle ? '#10b981' : '#9ca3af',
+                              animation: partialSubtitle ? 'pulse 1s infinite' : 'none'
+                            }}></div>
+                            <span>
+                              {partialSubtitle ? '实时翻译中...' : finalSubtitle ? '翻译完成' : '等待翻译'}
+                            </span>
+                          </div>
+
+                          <div style={{
+                            fontSize: '12px',
+                            color: '#6b7280',
+                            padding: '4px 8px',
+                            background: '#f3f4f6',
+                            borderRadius: '12px'
+                          }}>
+                            {selectedRoom.lang}
+                          </div>
+                        </div>
+
+                        {/* 调试信息（开发模式） */}
+                        {(partialSubtitle || finalSubtitle) && (
+                          <div style={{
+                            fontSize: '11px',
+                            color: '#9ca3af',
+                            marginTop: '8px',
+                            padding: '8px',
+                            background: '#f9fafb',
+                            borderRadius: '8px',
+                            border: '1px solid #e5e7eb'
+                          }}>
+                            <div>部分结果: {partialSubtitle || '无'}</div>
+                            <div>最终结果: {finalSubtitle || '无'}</div>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div style={{ textAlign: 'center', color: '#9ca3af' }}>
                         <div style={{ fontSize: '64px', marginBottom: '16px' }}>📺</div>
                         <p style={{ fontSize: '18px' }}>实时翻译字幕将在此显示</p>
                         <p style={{ fontSize: '14px', marginTop: '8px' }}>当前语言: {selectedRoom.lang}</p>
+                        <div style={{
+                          marginTop: '16px',
+                          fontSize: '12px',
+                          color: '#9ca3af',
+                          padding: '8px 16px',
+                          background: '#f3f4f6',
+                          borderRadius: '20px',
+                          display: 'inline-block'
+                        }}>
+                          支持流式实时翻译显示
+                        </div>
                       </div>
                     )}
                   </div>
@@ -922,7 +1296,7 @@ export default function PrymeUI() {
                 }}>
                   <button
                     onClick={toggleTranslation}
-                    disabled={!isConnected || !agentParticipant}
+                    disabled={!isConnected}
                     style={{
                       position: 'relative',
                       padding: '16px 32px',
@@ -933,12 +1307,12 @@ export default function PrymeUI() {
                       fontWeight: '600',
                       boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
                       border: 'none',
-                      cursor: (!isConnected || !agentParticipant) ? 'not-allowed' : 'pointer',
+                      cursor: !isConnected ? 'not-allowed' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '12px',
                       transition: 'all 0.3s ease',
-                      opacity: (!isConnected || !agentParticipant) ? 0.5 : 1
+                      opacity: !isConnected ? 0.5 : 1
                     }}
                   >
                     <Settings style={{ width: '20px', height: '20px' }} />
@@ -1025,8 +1399,9 @@ export default function PrymeUI() {
                   {/* 添加调试信息显示 */}
                   <div style={{ position: 'fixed', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '10px', borderRadius: '8px', fontSize: '12px', zIndex: 1000 }}>
                     <div>🔗 连接状态: {isConnected ? '已连接' : '未连接'}</div>
-                    <div>🤖 Agent: {agentParticipant ? agentParticipant.identity : '未找到'}</div>
+                    <div>🎤 翻译状态: {isTranslating ? '运行中' : '已停止'}</div>
                     <div>📺 字幕: {subtitle ? '有内容' : '无内容'}</div>
+                    <div>🏠 房间: {selectedRoom?.roomName || '未选择'}</div>
                   </div>
                 </LiveKitRoom>
               )}
