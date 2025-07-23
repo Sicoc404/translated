@@ -209,8 +209,14 @@ async def entrypoint(ctx: JobContext):
         async def handle_data_received_async(data: bytes, participant):
             """异步处理从客户端接收的数据消息"""
             try:
+                # 🚨 强制日志 - 确认数据接收
+                logger.info(f"🚨 CRITICAL: handle_data_received_async 被调用了！")
+                logger.info(f"🚨 CRITICAL: 数据类型: {type(data)}, 长度: {len(data) if data else 0}")
+                logger.info(f"🚨 CRITICAL: 参与者: {participant.identity if participant else 'None'}")
+                
                 message = data.decode('utf-8')
                 logger.info(f"[LOG][rpc-recv] 收到数据消息: {message[:100]}...")
+                logger.info(f"🚨 CRITICAL: 解码后的消息: {message}")
                 
                 # 尝试解析JSON消息
                 try:
@@ -249,8 +255,10 @@ async def entrypoint(ctx: JobContext):
                 logger.error(f"[LOG][rpc-recv] 处理数据消息失败: {e}")
         
         @ctx.room.on("data_received")
-        def handle_data_received(data: bytes, participant):
-            """同步回调包装器，使用asyncio.create_task处理异步逻辑"""
+        def handle_data_received(data_packet, participant):
+            """同步回调包装器，使用asyncio.create_task处理异步逻辑 - 修复参数格式"""
+            # 从 data_packet 中提取实际的数据
+            data = data_packet.data if hasattr(data_packet, 'data') else data_packet
             asyncio.create_task(handle_data_received_async(data, participant))
         
         @ctx.room.on("track_subscribed")
