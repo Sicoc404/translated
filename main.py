@@ -19,12 +19,12 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext, 
-    WorkerOptions, 
+    WorkerOptions,
+    WorkerConfig,
     cli, 
     JobProcess,
     AutoSubscribe
 )
-from livekit import Track
 from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
 # 加载环境变量
@@ -264,8 +264,7 @@ async def entrypoint(ctx: JobContext):
             print(f"🎧 订阅了音轨: {track.kind}, 来自: {participant.identity}", file=sys.stdout, flush=True)
             logger.info(f"🎧 TRACK_SUBSCRIBED: kind={track.kind}, participant={participant.identity}, publication_sid={publication.sid if publication else 'N/A'}")
             
-            if track.kind == Track.Kind.AUDIO:
-                print(f"🎧 音频轨道已订阅: {track.kind}")
+            if track.kind == "audio":
                 logger.info(f"[LOG][audio-in] 开始监听音频输入...")
                 print(f"🔊 音频轨道已订阅，开始处理音频流", file=sys.stdout, flush=True)
                 
@@ -279,7 +278,6 @@ async def entrypoint(ctx: JobContext):
                 except Exception as track_info_error:
                     logger.warning(f"⚠️ 获取音频轨道详情失败: {track_info_error}")
             else:
-                print(f"📹 非音频轨道: {track.kind}")
                 logger.info(f"📹 非音频轨道: {track.kind}")
                 print(f"📹 订阅了非音频轨道: {track.kind}", file=sys.stdout, flush=True)
         
@@ -375,7 +373,7 @@ async def entrypoint(ctx: JobContext):
                     for track_pub in participant.tracks.values():
                         if track_pub.track:
                             logger.info(f"[LOG][audio-in] 发现现有轨道: {track_pub.track.kind}")
-                            if track_pub.track.kind == Track.Kind.AUDIO:
+                            if track_pub.track.kind == "audio":
                                 logger.info(f"[LOG][audio-in] 音频轨道已就绪")
             else:
                 logger.info(f"[LOG][participants] 房间暂无远程参与者或无法访问参与者列表")
@@ -478,6 +476,11 @@ def main():
     
     # 配置LiveKit Agent Worker
     logger.info("⚡ 启动LiveKit Agent Worker...")
+    
+    # 配置Worker负载阈值，防止Agent在资源占用稍高时被标记为unavailable
+    config = WorkerConfig(max_load=1.5)
+    logger.info(f"🔧 Worker配置: max_load={config.max_load} (默认0.75已提升)")
+    
     opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
         prewarm_fnc=prewarm,
@@ -485,7 +488,7 @@ def main():
     )
     
     # 运行Agent Worker
-    cli.run_app(opts)
+    cli.run_app(opts, config=config)
 
 if __name__ == "__main__":
     main() 
