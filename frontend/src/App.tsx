@@ -176,7 +176,7 @@ export default function PrymeUI() {
     console.log('🚨 CRITICAL: toggleTranslation 按钮被点击了！');
     console.log('🚨 CRITICAL: isConnected =', isConnected);
     console.log('🚨 CRITICAL: roomRef.current =', !!roomRef.current);
-    
+
     if (!isConnected || !roomRef.current) {
       console.error('🚨 CRITICAL: 房间未连接，isConnected =', isConnected, 'roomRef =', !!roomRef.current);
       alert('请先连接到房间');
@@ -548,6 +548,8 @@ export default function PrymeUI() {
     const chunk = data.chunk || '';
     const isFinal = data.is_final || false;
 
+    // 🚨 强制日志 - 确认函数被调用
+    console.log('🚨 CRITICAL: handleTranslationStream 被调用了！');
     console.log('[LOG][translation-stream] 处理流式翻译:', {
       text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
       chunk: chunk,
@@ -562,9 +564,10 @@ export default function PrymeUI() {
       return;
     }
 
-    // 过滤过短的片段（但保留有意义的标点符号）
-    if (text.trim().length === 1 && !/[。！？，、；：]/.test(text.trim())) {
-      console.log('[LOG][translation-stream] 跳过过短片段:', text);
+    // 修复：不要过滤短片段，因为翻译内容可能很短
+    // 只过滤真正无意义的内容（如单个空格、标点等）
+    if (text.trim().length === 1 && /[\s\.,;:]/.test(text.trim())) {
+      console.log('[LOG][translation-stream] 跳过无意义片段:', text);
       return;
     }
 
@@ -578,6 +581,7 @@ export default function PrymeUI() {
       // 部分结果 - 累积显示
       setPartialSubtitle(text);
       setSubtitle(text + ' ⏳'); // 添加处理中指示器
+      console.log('🚨 CRITICAL: 设置部分翻译结果:', text);
       console.log('[LOG][translation-stream] 更新部分翻译结果:', text);
     }
   };
