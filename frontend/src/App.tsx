@@ -466,6 +466,15 @@ export default function PrymeUI() {
     console.log('🚨 CRITICAL: handleDataReceived 被调用了！', e);
     console.log('🚨 CRITICAL: 参与者身份:', e.participant?.identity);
     console.log('🚨 CRITICAL: 数据长度:', e.payload?.length);
+    console.log('🚨 CRITICAL: topic:', e.topic);
+
+    // 检查是否是字幕topic
+    if (e.topic === "subtitles") {
+      console.log('✅ 收到字幕topic数据');
+    } else {
+      console.log('⚠️ 收到非字幕topic数据:', e.topic);
+      // 对于非字幕topic的数据，仍然处理（向后兼容）
+    }
 
     try {
       const decoder = new TextDecoder();
@@ -474,6 +483,7 @@ export default function PrymeUI() {
       // 增强调试日志
       console.log('[LOG][subtitles-recv] 收到数据消息:', {
         sender: e.participant?.identity,
+        topic: e.topic,
         messageLength: message.length,
         message: message.substring(0, 200) + (message.length > 200 ? '...' : ''),
         timestamp: new Date().toISOString()
@@ -504,8 +514,13 @@ export default function PrymeUI() {
           return newEvents;
         });
 
-        // 处理流式翻译事件
-        if (jsonData.type === 'translation_stream') {
+        // 处理字幕流式事件（新格式）
+        if (jsonData.type === 'subtitle_stream') {
+          console.log('✅ 字幕内容:', jsonData.text);
+          handleSubtitleStream(jsonData);
+        }
+        // 处理流式翻译事件（向后兼容）
+        else if (jsonData.type === 'translation_stream') {
           handleTranslationStream(jsonData);
         }
         // 处理传统翻译事件（向后兼容）
@@ -542,7 +557,44 @@ export default function PrymeUI() {
     }
   };
 
-  // 处理流式翻译事件
+  // 处理字幕流式事件（新格式）
+  const handleSubtitleStream = (data: any) => {
+    const text = data.text || '';
+    const chunk = data.chunk || '';
+    const isFinal = data.is_final || false;
+
+    // 🚨 强制日志 - 确认函数被调用
+    console.log('🚨 CRITICAL: handleSubtitleStream 被调用了！');
+    console.log('[LOG][subtitle-stream] 处理字幕流式数据:', {
+      text: text.substring(0, 100) + (text.length > 100 ? '...' : ''),
+      chunk: chunk,
+      is_final: isFinal,
+      text_length: text.length,
+      chunk_length: chunk.length
+    });
+
+    // 过滤空内容
+    if (!text || text.trim().length === 0) {
+      console.log('[LOG][subtitle-stream] 跳过空内容');
+      return;
+    }
+
+    // 不过滤短片段，因为翻译内容可能很短
+    if (isFinal) {
+      // 最终结果 - 更新最终字幕并清空部分字幕
+      setFinalSubtitle(text);
+      setPartialSubtitle('');
+      setSubtitle(text);
+      console.log('🚨 CRITICAL: 设置最终字幕结果:', text);
+    } else {
+      // 部分结果 - 累积显示
+      setPartialSubtitle(text);
+      setSubtitle(text + ' ⏳'); // 添加处理中指示器
+      console.log('🚨 CRITICAL: 设置部分字幕结果:', text);
+    }
+  };
+
+  // 处理流式翻译事件（向后兼容）
   const handleTranslationStream = (data: any) => {
     const text = data.text || '';
     const chunk = data.chunk || '';
