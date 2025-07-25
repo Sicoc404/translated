@@ -24,7 +24,6 @@ from livekit.agents import (
     JobProcess,
     AutoSubscribe
 )
-from livekit import DataPacketKind
 from agent_config import create_translation_agent, create_translation_components, LANGUAGE_CONFIG
 
 # 加载环境变量
@@ -229,12 +228,8 @@ async def entrypoint(ctx: JobContext):
                                 'language': language_name,
                                 'timestamp': asyncio.get_event_loop().time()
                             }).encode('utf-8')
-                            await ctx.room.local_participant.publish_data(
-                                response_data,
-                                kind=DataPacketKind.RELIABLE,
-                                topic="subtitles"
-                            )
-                            logger.info(f"[LOG][subtitles-send] 翻译启动确认已发送到topic=subtitles")
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译启动确认已发送")
                             
                         elif action == 'stop':
                             logger.info(f"[LOG][rpc-recv] 停止翻译模式")
@@ -244,12 +239,8 @@ async def entrypoint(ctx: JobContext):
                                 'status': 'stopped',
                                 'timestamp': asyncio.get_event_loop().time()
                             }).encode('utf-8')
-                            await ctx.room.local_participant.publish_data(
-                                response_data,
-                                kind=DataPacketKind.RELIABLE,
-                                topic="subtitles"
-                            )
-                            logger.info(f"[LOG][subtitles-send] 翻译停止确认已发送到topic=subtitles")
+                            await ctx.room.local_participant.publish_data(response_data)
+                            logger.info(f"[LOG][subtitles-send] 翻译停止确认已发送")
                             
                 except json.JSONDecodeError:
                     logger.warning(f"[LOG][rpc-recv] 无法解析JSON消息: {message}")
@@ -347,12 +338,8 @@ async def entrypoint(ctx: JobContext):
                     'is_final': is_final,
                     'timestamp': asyncio.get_event_loop().time()
                 }).encode('utf-8')
-                await ctx.room.local_participant.publish_data(
-                    transcript_data,
-                    kind=DataPacketKind.RELIABLE,
-                    topic="subtitles"
-                )
-                logger.info(f"[LOG][subtitles-send] 转写结果已发送到topic=subtitles: {transcript} (最终: {is_final})")
+                await ctx.room.local_participant.publish_data(transcript_data)
+                logger.info(f"[LOG][subtitles-send] 转写结果已发送: {transcript} (最终: {is_final})")
             except Exception as e:
                 logger.error(f"❌ 发送转写结果失败: {e}")
         
@@ -408,12 +395,8 @@ async def entrypoint(ctx: JobContext):
                         'is_final': is_final,
                         'timestamp': asyncio.get_event_loop().time()
                     }).encode('utf-8')
-                    await ctx.room.local_participant.publish_data(
-                        translation_data,
-                        kind=DataPacketKind.RELIABLE,
-                        topic="subtitles"
-                    )
-                    logger.info(f"[LOG][subtitles-send] 翻译结果已发送到topic=subtitles: '{translation_chunk}' (最终: {is_final})")
+                    await ctx.room.local_participant.publish_data(translation_data)
+                    logger.info(f"[LOG][subtitles-send] 翻译结果已发送: '{translation_chunk}' (最终: {is_final})")
                 except Exception as e:
                     logger.error(f"❌ 发送翻译结果失败: {e}")
         
@@ -451,7 +434,7 @@ async def entrypoint(ctx: JobContext):
                 # 实时发送翻译片段到前端
                 try:
                     translation_data = json.dumps({
-                        'type': 'subtitle_stream',  # 修改为subtitle_stream
+                        'type': 'subtitle_stream',  # 修改为subtitle_stream以匹配前端
                         'text': current_translation,
                         'chunk': chunk_content,
                         'source_language': 'zh',
@@ -459,14 +442,8 @@ async def entrypoint(ctx: JobContext):
                         'is_final': is_final,
                         'timestamp': asyncio.get_event_loop().time()
                     }).encode('utf-8')
-                    
-                    # 使用正确的LiveKit数据发送格式，添加topic和kind参数
-                    await ctx.room.local_participant.publish_data(
-                        translation_data,
-                        kind=DataPacketKind.RELIABLE,
-                        topic="subtitles"
-                    )
-                    logger.info(f"[LOG][subtitles-send] 字幕片段已发送到topic=subtitles: '{chunk_content}' (最终: {is_final})")
+                    await ctx.room.local_participant.publish_data(translation_data)
+                    logger.info(f"[LOG][subtitles-send] LLM流式片段已发送: '{chunk_content}' (最终: {is_final})")
                 except Exception as e:
                     logger.error(f"❌ 发送LLM流式片段失败: {e}")
         
@@ -518,12 +495,8 @@ async def entrypoint(ctx: JobContext):
                 'language': target_language,
                 'timestamp': asyncio.get_event_loop().time()
             }).encode('utf-8')
-            await ctx.room.local_participant.publish_data(
-                welcome_data,
-                kind=DataPacketKind.RELIABLE,
-                topic="subtitles"
-            )
-            logger.info(f"[LOG][subtitles-send] 欢迎消息已发送到topic=subtitles: {language_name}")
+            await ctx.room.local_participant.publish_data(welcome_data)
+            logger.info(f"[LOG][subtitles-send] 欢迎消息已通过数据通道发送: {language_name}")
         except Exception as e:
             logger.warning(f"⚠️ 发送欢迎消息失败: {e}")
         
